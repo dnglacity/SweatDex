@@ -12,8 +12,8 @@ void main() async {
 
   // 3. Initialize Supabase
   await Supabase.initialize(
-    url: dotenv.env['SUPABASE_URL']!,
-    anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
+    url: dotenv.env['https://pxxpvhhezmbtbfeoibua.supabase.co']!,
+    anonKey: dotenv.env['eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB4eHB2aGhlem1idGJmZW9pYnVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExODQ1OTIsImV4cCI6MjA4Njc2MDU5Mn0.jNpF0_RYiCEirAQvSsT_3JaulReTjxsZfl0oOuP0_Y0']!,
   );
 
   runApp(const MyApp());
