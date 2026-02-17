@@ -1,5 +1,14 @@
-EOW ideas 2.15.26
+2.15.26 EOW ideas
 make roster functions: edit, delete, move -- add game roster nav button
 search bar for players in roster and team view
 
 create game roster screen -- create template (add players to starting roster and sub roster)
+
+
+2.16.26
+work log
+added roster functions w/o nav
+added multiple coaches and coach perms
+
+need to fix
+double enter press on team creation error

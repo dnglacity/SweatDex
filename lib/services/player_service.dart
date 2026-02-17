@@ -12,7 +12,7 @@ class PlayerService {
   Future<void> addPlayer(Player player) async {
     try {
       await _supabase.from('players').insert(player.toMap());
-      print('✓ Player added'); // Added success message for consistency
+      print('✓ Player added');
     } catch (e) {
       print('Error adding player: $e');
       throw Exception('Error adding player: $e');
@@ -43,8 +43,6 @@ class PlayerService {
         .eq('team_id', teamId)
         .order('name', ascending: true)
         .map((maps) {
-          // Optional: Add debug logging
-          // print('Stream updated: ${maps.length} players');
           return maps.map((map) => Player.fromMap(map)).toList();
         });
   }
@@ -56,7 +54,7 @@ class PlayerService {
           .from('players')
           .update(player.toMap())
           .eq('id', player.id);
-      print('✓ Player updated'); // Added success message
+      print('✓ Player updated');
     } catch (e) {
       print('Error updating player: $e');
       throw Exception('Error updating player: $e');
@@ -77,7 +75,7 @@ class PlayerService {
     }
   }
 
-  // BULK UPDATE STATUS (for marking all present/absent)
+  // BULK UPDATE STATUS
   Future<void> bulkUpdateStatus(String teamId, String status) async {
     try {
       await _supabase
@@ -95,7 +93,7 @@ class PlayerService {
   Future<void> deletePlayer(String id) async {
     try {
       await _supabase.from('players').delete().eq('id', id);
-      print('✓ Player deleted'); // Added success message
+      print('✓ Player deleted');
     } catch (e) {
       print('Error deleting player: $e');
       throw Exception('Failed to delete player: $e');
@@ -121,7 +119,7 @@ class PlayerService {
       return summary;
     } catch (e) {
       print('Error getting attendance summary: $e');
-      return {'present': 0, 'absent': 0, 'late': 0, 'excused': 0}; // Return default values instead of empty map
+      return {'present': 0, 'absent': 0, 'late': 0, 'excused': 0};
     }
   }
 
@@ -138,7 +136,6 @@ class PlayerService {
         return [];
       }
 
-      // Get coach profile
       final coach = await _supabase
           .from('coaches')
           .select('id')
@@ -147,13 +144,11 @@ class PlayerService {
 
       final coachId = coach['id'];
 
-      // Get teams for this coach via team_coaches junction table
       final response = await _supabase
           .from('team_coaches')
-          .select('team_id, teams(id, team_name, sport, created_at)')
+          .select('team_id, is_owner, teams(id, team_name, sport, created_at)')
           .eq('coach_id', coachId);
 
-      // Extract team data from the nested response
       final teams = (response as List).map((item) {
         final team = item['teams'];
         return {
@@ -161,6 +156,7 @@ class PlayerService {
           'team_name': team['team_name'],
           'sport': team['sport'],
           'created_at': team['created_at'],
+          'is_owner': item['is_owner'] ?? false,
         };
       }).toList();
 
@@ -171,7 +167,7 @@ class PlayerService {
     }
   }
 
-  // CREATE NEW TEAM
+  // CREATE NEW TEAM (creator is automatically owner)
   Future<void> createTeam(String teamName, String sport) async {
     try {
       final user = _supabase.auth.currentUser;
@@ -179,7 +175,6 @@ class PlayerService {
         throw Exception('You must be logged in to create a team.');
       }
 
-      // Get coach profile
       final coach = await _supabase
           .from('coaches')
           .select('id')
@@ -188,7 +183,6 @@ class PlayerService {
 
       final coachId = coach['id'];
 
-      // 1. Create the team
       final teamResponse = await _supabase
           .from('teams')
           .insert({
@@ -200,17 +194,84 @@ class PlayerService {
 
       final teamId = teamResponse['id'];
 
-      // 2. Link coach to team in team_coaches junction table
       await _supabase.from('team_coaches').insert({
         'team_id': teamId,
         'coach_id': coachId,
         'role': 'Head Coach',
+        'is_owner': true, // Creator is always owner
       });
 
-      print('✓ Team created and coach assigned');
+      print('✓ Team created and coach assigned as owner');
     } catch (e) {
       print('Error creating team: $e');
       throw Exception('Error creating team: $e');
+    }
+  }
+
+  // UPDATE TEAM (any coach on team can update, not just owners)
+  Future<void> updateTeam(String teamId, String teamName, String sport) async {
+    try {
+      // Check if current user is a coach on this team (not just owner)
+      final isCoach = await _isCoachOnTeam(teamId);
+      if (!isCoach) {
+        throw Exception('Only coaches on this team can edit team details');
+      }
+
+      await _supabase
+          .from('teams')
+          .update({
+            'team_name': teamName,
+            'sport': sport,
+          })
+          .eq('id', teamId);
+      print('✓ Team updated');
+    } catch (e) {
+      print('Error updating team: $e');
+      throw Exception('Error updating team: $e');
+    }
+  }
+
+  // Helper to check if user is a coach on the team (not just owner)
+  Future<bool> _isCoachOnTeam(String teamId) async {
+    try {
+      final user = _supabase.auth.currentUser;
+      if (user == null) return false;
+
+      final coach = await _supabase
+          .from('coaches')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
+
+      final coachId = coach['id'];
+
+      final result = await _supabase
+          .from('team_coaches')
+          .select('id')
+          .eq('team_id', teamId)
+          .eq('coach_id', coachId)
+          .maybeSingle();
+
+      return result != null;
+    } catch (e) {
+      print('Error checking coach status: $e');
+      return false;
+    }
+  }
+
+  // DELETE TEAM (only owners can delete)
+  Future<void> deleteTeam(String teamId) async {
+    try {
+      final isOwner = await _isTeamOwner(teamId);
+      if (!isOwner) {
+        throw Exception('Only team owners can delete teams');
+      }
+
+      await _supabase.from('teams').delete().eq('id', teamId);
+      print('✓ Team deleted');
+    } catch (e) {
+      print('Error deleting team: $e');
+      throw Exception('Error deleting team: $e');
     }
   }
 
@@ -230,14 +291,31 @@ class PlayerService {
     }
   }
 
-  // DELETE TEAM
-  Future<void> deleteTeam(String teamId) async {
+  // CHECK IF CURRENT USER IS TEAM OWNER
+  Future<bool> _isTeamOwner(String teamId) async {
     try {
-      await _supabase.from('teams').delete().eq('id', teamId);
-      print('✓ Team deleted');
+      final user = _supabase.auth.currentUser;
+      if (user == null) return false;
+
+      final coach = await _supabase
+          .from('coaches')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
+
+      final coachId = coach['id'];
+
+      final result = await _supabase
+          .from('team_coaches')
+          .select('is_owner')
+          .eq('team_id', teamId)
+          .eq('coach_id', coachId)
+          .maybeSingle();
+
+      return result?['is_owner'] == true;
     } catch (e) {
-      print('Error deleting team: $e');
-      throw Exception('Error deleting team: $e');
+      print('Error checking owner status: $e');
+      return false;
     }
   }
 
@@ -264,13 +342,14 @@ class PlayerService {
     }
   }
 
-  // GET ALL COACHES FOR A TEAM
+  // GET ALL COACHES FOR A TEAM (with ownership info)
   Future<List<Map<String, dynamic>>> getTeamCoaches(String teamId) async {
     try {
       final response = await _supabase
           .from('team_coaches')
-          .select('coaches(id, name, email, organization), role')
-          .eq('team_id', teamId);
+          .select('coaches(id, name, email, organization), role, is_owner')
+          .eq('team_id', teamId)
+          .order('is_owner', ascending: false); // Owners first
 
       return (response as List).map((item) {
         final coach = item['coaches'];
@@ -280,11 +359,144 @@ class PlayerService {
           'email': coach['email'],
           'organization': coach['organization'],
           'role': item['role'],
+          'is_owner': item['is_owner'] ?? false,
         };
       }).toList();
     } catch (e) {
       print('Error fetching team coaches: $e');
       throw Exception('Error fetching team coaches: $e');
+    }
+  }
+
+  // ADD COACH TO TEAM
+  Future<void> addCoachToTeam(String teamId, String coachEmail, String role) async {
+    try {
+      final coachResult = await _supabase
+          .from('coaches')
+          .select('id')
+          .eq('email', coachEmail)
+          .maybeSingle();
+
+      if (coachResult == null) {
+        throw Exception('No coach found with email: $coachEmail');
+      }
+
+      final coachId = coachResult['id'];
+
+      final existing = await _supabase
+          .from('team_coaches')
+          .select('id')
+          .eq('team_id', teamId)
+          .eq('coach_id', coachId)
+          .maybeSingle();
+
+      if (existing != null) {
+        throw Exception('This coach is already on the team');
+      }
+
+      await _supabase.from('team_coaches').insert({
+        'team_id': teamId,
+        'coach_id': coachId,
+        'role': role,
+        'is_owner': false,
+      });
+
+      print('✓ Coach added to team');
+    } catch (e) {
+      print('Error adding coach: $e');
+      throw Exception('Error adding coach: $e');
+    }
+  }
+
+  // REMOVE COACH FROM TEAM
+  Future<void> removeCoachFromTeam(String teamId, String coachId) async {
+    try {
+      final user = _supabase.auth.currentUser;
+      if (user == null) throw Exception('Not logged in');
+
+      final currentCoach = await _supabase
+          .from('coaches')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
+
+      final currentCoachId = currentCoach['id'];
+      final isRemovingSelf = coachId == currentCoachId;
+
+      if (!isRemovingSelf) {
+        final isOwner = await _isTeamOwner(teamId);
+        if (!isOwner) {
+          throw Exception('Only team owners can remove other coaches');
+        }
+      }
+
+      final coachToRemove = await _supabase
+          .from('team_coaches')
+          .select('is_owner')
+          .eq('team_id', teamId)
+          .eq('coach_id', coachId)
+          .single();
+
+      if (coachToRemove['is_owner'] == true) {
+        final owners = await _supabase
+            .from('team_coaches')
+            .select('id')
+            .eq('team_id', teamId)
+            .eq('is_owner', true);
+
+        if (owners.length <= 1) {
+          throw Exception('Cannot remove the only owner. Transfer ownership first.');
+        }
+      }
+
+      await _supabase
+          .from('team_coaches')
+          .delete()
+          .eq('team_id', teamId)
+          .eq('coach_id', coachId);
+
+      print('✓ Coach removed from team');
+    } catch (e) {
+      print('Error removing coach: $e');
+      throw Exception('Error removing coach: $e');
+    }
+  }
+
+  // TRANSFER OWNERSHIP
+  Future<void> transferOwnership(String teamId, String newOwnerId) async {
+    try {
+      final isOwner = await _isTeamOwner(teamId);
+      if (!isOwner) {
+        throw Exception('Only current owner can transfer ownership');
+      }
+
+      final user = _supabase.auth.currentUser;
+      if (user == null) throw Exception('Not logged in');
+
+      final currentCoach = await _supabase
+          .from('coaches')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
+
+      final currentCoachId = currentCoach['id'];
+
+      await _supabase
+          .from('team_coaches')
+          .update({'is_owner': false})
+          .eq('team_id', teamId)
+          .eq('coach_id', currentCoachId);
+
+      await _supabase
+          .from('team_coaches')
+          .update({'is_owner': true})
+          .eq('team_id', teamId)
+          .eq('coach_id', newOwnerId);
+
+      print('✓ Ownership transferred');
+    } catch (e) {
+      print('Error transferring ownership: $e');
+      throw Exception('Error transferring ownership: $e');
     }
   }
 }

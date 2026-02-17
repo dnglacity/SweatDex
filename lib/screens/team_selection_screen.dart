@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/player_service.dart';
 import 'roster_screen.dart';
-import 'login_screen.dart'; // ADD THIS IMPORT
+import 'login_screen.dart';
 import '../services/auth_service.dart';
 
 class TeamSelectionScreen extends StatefulWidget {
@@ -28,7 +28,6 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
   }
 
   Future<void> _handleLogout() async {
-    // Show confirmation dialog
     final shouldLogout = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -63,7 +62,6 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
             ),
           );
           
-          // Navigate to login screen
           Navigator.of(context).pushAndRemoveUntil(
             MaterialPageRoute(builder: (context) => const LoginScreen()),
             (route) => false,
@@ -82,6 +80,145 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
     }
   }
 
+  // NEW: Edit team dialog
+  Future<void> _showEditTeamDialog(Map<String, dynamic> team) async {
+    final nameController = TextEditingController(text: team['team_name']);
+    final sportController = TextEditingController(text: team['sport'] ?? 'General');
+    final formKey = GlobalKey<FormState>();
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Team'),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: nameController,
+                textInputAction: TextInputAction.next,
+                onFieldSubmitted: (_) => FocusScope.of(context).nextFocus(),
+                decoration: const InputDecoration(
+                  labelText: 'Team Name',
+                  hintText: 'e.g. Tigers',
+                  border: OutlineInputBorder(),
+                ),
+                autofocus: true,
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter a team name';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: sportController,
+                textInputAction: TextInputAction.done,
+                onFieldSubmitted: (_) {
+                  if (formKey.currentState!.validate()) {
+                    Navigator.pop(context, true);
+                  }
+                },
+                decoration: const InputDecoration(
+                  labelText: 'Sport',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(context, true);
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true && mounted) {
+      try {
+        await _playerService.updateTeam(
+          team['id'],
+          nameController.text.trim(),
+          sportController.text.trim(),
+        );
+        _refreshTeams();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Team updated successfully!')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error updating team: $e')),
+          );
+        }
+      }
+    }
+
+    nameController.dispose();
+    sportController.dispose();
+  }
+
+  // NEW: Delete team confirmation
+  Future<void> _showDeleteTeamDialog(Map<String, dynamic> team) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Team'),
+        content: Text(
+          'Are you sure you want to delete "${team['team_name']}"?\n\nThis will also delete all players on this team. This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true && mounted) {
+      try {
+        await _playerService.deleteTeam(team['id']);
+        _refreshTeams();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('${team['team_name']} deleted')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error deleting team: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -89,7 +226,6 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
         title: const Text('Select Your Team'),
         centerTitle: true,
         actions: [
-          // Logout button
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: _handleLogout,
@@ -153,35 +289,114 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
               padding: const EdgeInsets.all(16),
               itemBuilder: (context, index) {
                 final team = teams[index];
+                // In the ListView.builder where you display teams:
                 return Card(
                   elevation: 2,
                   margin: const EdgeInsets.only(bottom: 12),
                   child: ListTile(
                     leading: CircleAvatar(
-                      backgroundColor: Colors.blue[50],
-                      child: const Icon(Icons.group, color: Colors.blue),
+                      backgroundColor: team['is_owner'] == true 
+                          ? Colors.amber[100]  // Gold for owned teams
+                          : Colors.blue[50],    // Blue for regular coach
+                      child: Icon(
+                        team['is_owner'] == true ? Icons.shield : Icons.group,
+                        color: team['is_owner'] == true ? Colors.amber[700] : Colors.blue,
+                      ),
                     ),
-                    title: Text(
-                      team['team_name'] ?? 'Unnamed Team',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    title: Row(
+                      children: [
+                        Text(
+                          team['team_name'] ?? 'Unnamed Team',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        if (team['is_owner'] == true) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.amber[100],
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              'OWNER',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.amber[900],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     subtitle: Text(team['sport'] ?? 'General'),
-                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+
+                    trailing: PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_vert),
+                      onSelected: (value) async {
+                        if (value == 'open') {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => RosterScreen(
+                                teamId: team['id'],
+                                teamName: team['team_name'],
+                                sport: team['sport'],
+                              ),
+                            ),
+                          );
+                          _refreshTeams();
+                        } else if (value == 'edit') {
+                          await _showEditTeamDialog(team);
+                        } else if (value == 'delete') {
+                          await _showDeleteTeamDialog(team);
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                          value: 'open',
+                          child: Row(
+                            children: [
+                              Icon(Icons.open_in_new, size: 20),
+                              SizedBox(width: 12),
+                              Text('Open Roster'),
+                            ],
+                          ),
+                        ),
+                        const PopupMenuItem(
+                          value: 'edit',
+                          child: Row(
+                            children: [
+                              Icon(Icons.edit, size: 20),
+                              SizedBox(width: 12),
+                              Text('Edit Team'),
+                            ],
+                          ),
+                        ),
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Row(
+                            children: [
+                              Icon(Icons.delete, color: Colors.red, size: 20),
+                              SizedBox(width: 12),
+                              Text('Delete Team', style: TextStyle(color: Colors.red)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                     onTap: () async {
-                      final result = await Navigator.push(
+                      await Navigator.push(
                         context,
                         MaterialPageRoute(
                           builder: (context) => RosterScreen(
                             teamId: team['id'],
-                            teamName: team['team_name'], // Pass team name
-                            sport: team['sport'], // Pass sport
+                            teamName: team['team_name'],
+                            sport: team['sport'],
                           ),
                         ),
                       );
-                      // Refresh if roster screen indicates changes
-                      if (result == true) {
-                        _refreshTeams();
-                      }
+                      _refreshTeams();
                     },
                   ),
                 );
@@ -214,8 +429,8 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
             children: [
               TextFormField(
                 controller: nameController,
-                textInputAction: TextInputAction.next, // Added
-                onFieldSubmitted: (_) => FocusScope.of(context).nextFocus(), // Added
+                textInputAction: TextInputAction.next,
+                onFieldSubmitted: (_) => FocusScope.of(context).nextFocus(),
                 decoration: const InputDecoration(
                   labelText: 'Team Name',
                   hintText: 'e.g. Tigers',
@@ -232,8 +447,8 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
               const SizedBox(height: 16),
               TextFormField(
                 controller: sportController,
-                textInputAction: TextInputAction.done, // Added
-                onFieldSubmitted: (_) { // Added - Submit on Enter
+                textInputAction: TextInputAction.done,
+                onFieldSubmitted: (_) {
                   if (formKey.currentState!.validate()) {
                     Navigator.pop(context, true);
                   }
@@ -252,7 +467,7 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () async {
+            onPressed: () {
               if (formKey.currentState!.validate()) {
                 Navigator.pop(context, true);
               }
@@ -263,7 +478,6 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
       ),
     );
 
-    // Create team after dialog closes to avoid navigation issues
     if (result == true && mounted) {
       try {
         await _playerService.createTeam(

@@ -2,17 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:sweatdex/models/player.dart';
 import '../services/player_service.dart';
 import 'add_player_screen.dart';
+import 'manage_coaches_screen.dart'; // Add this import
 
 class RosterScreen extends StatefulWidget {
   final String teamId;
-  final String teamName; // Added
-  final String? sport; // Added (optional)
+  final String teamName;
+  final String? sport;
 
   const RosterScreen({
     super.key,
     required this.teamId,
-    required this.teamName, // Added
-    this.sport, // Added
+    required this.teamName,
+    this.sport,
   });
 
   @override
@@ -135,7 +136,6 @@ class _RosterScreenState extends State<RosterScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        // Updated to show team name and sport
         title: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -155,6 +155,22 @@ class _RosterScreenState extends State<RosterScreen> {
         ),
         centerTitle: true,
         actions: [
+          // Manage coaches button (NEW)
+          IconButton(
+            icon: const Icon(Icons.group),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ManageCoachesScreen(
+                    teamId: widget.teamId,
+                    teamName: widget.teamName,
+                  ),
+                ),
+              );
+            },
+            tooltip: 'Manage Coaches',
+          ),
           // Bulk actions button
           IconButton(
             icon: const Icon(Icons.checklist),
@@ -219,7 +235,6 @@ class _RosterScreenState extends State<RosterScreen> {
             );
           }
 
-          // Calculate attendance summary
           final present = players.where((p) => p.status == 'present').length;
           final absent = players.where((p) => p.status == 'absent').length;
           final late = players.where((p) => p.status == 'late').length;
@@ -227,7 +242,6 @@ class _RosterScreenState extends State<RosterScreen> {
 
           return Column(
             children: [
-              // Attendance Summary Card
               Card(
                 margin: const EdgeInsets.all(16),
                 child: Padding(
@@ -243,8 +257,6 @@ class _RosterScreenState extends State<RosterScreen> {
                   ),
                 ),
               ),
-
-              // Player List
               Expanded(
                 child: ListView.builder(
                   itemCount: players.length,
@@ -319,7 +331,6 @@ class _RosterScreenState extends State<RosterScreen> {
                                   ),
                                 ),
                               ),
-                              // Status indicator badge
                               Positioned(
                                 right: 0,
                                 bottom: 0,
@@ -343,7 +354,6 @@ class _RosterScreenState extends State<RosterScreen> {
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              // Quick check-in button
                               IconButton(
                                 icon: Icon(
                                   player.status == 'present' ? Icons.check_circle : Icons.circle_outlined,
@@ -356,7 +366,6 @@ class _RosterScreenState extends State<RosterScreen> {
                                 },
                                 tooltip: player.status == 'present' ? 'Mark Absent' : 'Mark Present',
                               ),
-                              // More options menu
                               PopupMenuButton<String>(
                                 icon: const Icon(Icons.more_vert),
                                 onSelected: (value) async {
