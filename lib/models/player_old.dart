@@ -6,7 +6,7 @@ class Player {
   final String name;
   final String? studentId;
   final String? studentEmail;
-  final String? jerseyNumber;
+  final String? jerseyNumber; // Changed to String to allow "12A", "00", etc.
   final String? nickname;
   final String status;
   final DateTime? createdAt;
@@ -23,6 +23,8 @@ class Player {
     this.createdAt,
   });
 
+  // 1. Convert Supabase Map (JSON) to Player Object
+  // This is used when READING from the database
   factory Player.fromMap(Map<String, dynamic> map) {
     return Player(
       id: map['id'] ?? '',
@@ -30,13 +32,17 @@ class Player {
       name: map['name'] ?? '',
       studentId: map['student_id'],
       studentEmail: map['student_email'],
-      jerseyNumber: map['jersey_number']?.toString(),
+      jerseyNumber: map['jersey_number']?.toString(), // Convert to string if needed
       nickname: map['nickname'],
       status: map['status'] ?? 'present',
-      createdAt: map['created_at'] != null ? DateTime.parse(map['created_at']) : null,
+      createdAt: map['created_at'] != null 
+          ? DateTime.parse(map['created_at']) 
+          : null,
     );
   }
 
+  // 2. Convert Player Object to Map (JSON)
+  // This is used when WRITING to the database
   Map<String, dynamic> toMap() {
     return {
       'team_id': teamId,
@@ -46,9 +52,11 @@ class Player {
       'jersey_number': jerseyNumber,
       'nickname': nickname,
       'status': status,
+      // Don't include 'id' or 'created_at' when creating - Supabase handles these
     };
   }
 
+  // 3. Create a copy with updated fields (useful for editing)
   Player copyWith({
     String? id,
     String? teamId,
@@ -73,9 +81,13 @@ class Player {
     );
   }
 
+  // 4. Display jersey with fallback
   String get displayJersey => jerseyNumber ?? '-';
+
+  // 5. Display name with nickname
   String get displayName => nickname != null ? '$name ($nickname)' : name;
 
+  // NEW: Get status color
   Color get statusColor {
     switch (status) {
       case 'present':
@@ -91,6 +103,7 @@ class Player {
     }
   }
 
+  // NEW: Get status icon
   IconData get statusIcon {
     switch (status) {
       case 'present':
@@ -106,7 +119,10 @@ class Player {
     }
   }
 
+  // NEW: Get status label
   String get statusLabel {
     return status[0].toUpperCase() + status.substring(1);
   }
+
 }
+

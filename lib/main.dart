@@ -1,22 +1,71 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart'; // Add this
-import 'package:flutter_dotenv/flutter_dotenv.dart';      // Add this
-import 'screens/team_selection_screen.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'screens/auth_wrapper.dart'; 
+
 
 void main() async {
-  // 1. Ensure Flutter is ready to talk to the device
+  // Ensure Flutter is ready
   WidgetsFlutterBinding.ensureInitialized();
+  print('✓ Flutter binding initialized');
 
-  // 2. Load your environment variables from the .env file
-  await dotenv.load(fileName: ".env");
+  try {
+    print('Loading .env file...');
+    // Load environment variables
+    await dotenv.load(fileName: ".env");
 
-  // 3. Initialize Supabase
-  await Supabase.initialize(
-    url: dotenv.env['https://pxxpvhhezmbtbfeoibua.supabase.co']!,
-    anonKey: dotenv.env['eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB4eHB2aGhlem1idGJmZW9pYnVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExODQ1OTIsImV4cCI6MjA4Njc2MDU5Mn0.jNpF0_RYiCEirAQvSsT_3JaulReTjxsZfl0oOuP0_Y0']!,
-  );
+    print('✓ .env file loaded');
+    // Check if environment variables are loaded
+    final supabaseUrl = dotenv.env['SUPABASE_URL'];
+    final supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY'];
 
-  runApp(const MyApp());
+    print('SUPABASE_URL: $supabaseUrl');
+    print('SUPABASE_ANON_KEY: ${supabaseAnonKey?.substring(0, 20)}...');
+
+    if (supabaseUrl == null || supabaseAnonKey == null) {
+      throw Exception('Missing Supabase credentials in .env file');
+    }
+
+    // Initialize Supabase
+    print('Initializing Supabase...');
+    await Supabase.initialize(
+      url: supabaseUrl,
+      anonKey: supabaseAnonKey,
+    );
+    print('✓ Supabase initialized');
+
+    print('Starting app...');
+    runApp(const MyApp());
+  } catch (e) {
+    print('❌ ERROR: $e');
+    // Show error if initialization fails
+    runApp(MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                const SizedBox(height: 16),
+                const Text(
+                  'Initialization Error',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  e.toString(),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.red),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ));
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -27,12 +76,10 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        useMaterial3: true, 
-        colorSchemeSeed: Colors.blue, // You can change this to your team color!
+        useMaterial3: true,
+        colorSchemeSeed: Colors.blue,
       ),
-      // IMPORTANT: Replace this placeholder with a UUID from your 'teams' table
-      home: const TeamSelectionScreen(),
+      home: const AuthWrapper(),
     );
   }
-
 }
