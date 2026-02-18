@@ -1,0 +1,2 @@
+1. Pressing Enter twice in the team creation popup in the team name box causes an error
+2. Creating a team causes an error
