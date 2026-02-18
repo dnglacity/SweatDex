@@ -1,7 +1,6 @@
-2.15.26 EOW ideas
+2.15.26
+need to fix/add
 make roster functions: edit, delete, move -- add game roster nav button
-search bar for players in roster and team view
-
 create game roster screen -- create template (add players to starting roster and sub roster)
 
 
@@ -12,3 +11,18 @@ added multiple coaches and coach perms
 
 need to fix
 double enter press on team creation error
+
+
+2.17.26
+work log
+attempted to fix double enter on team creation; error persists
+added game roster screen
+
+need to fix/add
+double enter
+create a navagagation bar on the bottom for roster list and list of game rosters
+    game rosters will have name of roster, custom title (suggest using the match title template as default "team name" vs. [blank])
+
+remove swipe to delete
+add bulk delete
+search bar for players at bottom

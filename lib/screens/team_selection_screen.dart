@@ -85,6 +85,7 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
     final nameController = TextEditingController(text: team['team_name']);
     final sportController = TextEditingController(text: team['sport'] ?? 'General');
     final formKey = GlobalKey<FormState>();
+    bool _submitted = false;                          // <-- ADD THIS GUARD
 
     final result = await showDialog<bool>(
       context: context,
@@ -117,7 +118,8 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
                 controller: sportController,
                 textInputAction: TextInputAction.done,
                 onFieldSubmitted: (_) {
-                  if (formKey.currentState!.validate()) {
+                  if (!_submitted && formKey.currentState!.validate()) {
+                    _submitted = true;
                     Navigator.pop(context, true);
                   }
                 },
@@ -136,7 +138,8 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
           ),
           FilledButton(
             onPressed: () {
-              if (formKey.currentState!.validate()) {
+              if (!_submitted && formKey.currentState!.validate()) {
+                _submitted = true;
                 Navigator.pop(context, true);
               }
             },
@@ -417,6 +420,7 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
     final nameController = TextEditingController();
     final sportController = TextEditingController(text: 'General');
     final formKey = GlobalKey<FormState>();
+    bool _submitted = false;                          // <-- ADD THIS GUARD
 
     final result = await showDialog<bool>(
       context: context,
@@ -449,7 +453,8 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
                 controller: sportController,
                 textInputAction: TextInputAction.done,
                 onFieldSubmitted: (_) {
-                  if (formKey.currentState!.validate()) {
+                  if (!_submitted && formKey.currentState!.validate()) {
+                    _submitted = true;                // <-- GUARD
                     Navigator.pop(context, true);
                   }
                 },
@@ -468,7 +473,8 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
           ),
           FilledButton(
             onPressed: () {
-              if (formKey.currentState!.validate()) {
+              if (!_submitted && formKey.currentState!.validate()) {
+                _submitted = true;                    // <-- GUARD
                 Navigator.pop(context, true);
               }
             },

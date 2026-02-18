@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:sweatdex/models/player.dart';
 import '../services/player_service.dart';
 import 'add_player_screen.dart';
-import 'manage_coaches_screen.dart'; // Add this import
+import 'manage_coaches_screen.dart';
+import 'game_roster_screen.dart';
 
 class RosterScreen extends StatefulWidget {
   final String teamId;
@@ -155,6 +156,22 @@ class _RosterScreenState extends State<RosterScreen> {
         ),
         centerTitle: true,
         actions: [
+          // Game Roster builder button
+          IconButton(
+            icon: const Icon(Icons.sports_score),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => GameRosterScreen(
+                    teamId: widget.teamId,
+                    teamName: widget.teamName,
+                  ),
+                ),
+              );
+            },
+            tooltip: 'Build Game Roster',
+          ),
           // Manage coaches button (NEW)
           IconButton(
             icon: const Icon(Icons.group),
