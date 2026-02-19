@@ -6,7 +6,6 @@ import 'screens/auth_wrapper.dart';
 void main() async {
   // Ensure Flutter is ready
   WidgetsFlutterBinding.ensureInitialized();
-  print('✓ Flutter binding initialized');
 
   try {
     
@@ -18,22 +17,17 @@ void main() async {
     const supabaseUrl = String.fromEnvironment('https://pxxpvhhezmbtbfeoibua.supabase.co');
     const supabaseAnonKey = String.fromEnvironment('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB4eHB2aGhlem1idGJmZW9pYnVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExO');
 
-    print('SUPABASE_URL: $supabaseUrl');
-    print('SUPABASE_ANON_KEY: ${supabaseAnonKey?.substring(0, 20)}...');
+    
 
 
     // Initialize Supabase
-    print('Initializing Supabase...');
     await Supabase.initialize(
       url: supabaseUrl,
       anonKey: supabaseAnonKey,
     );
-    print('✓ Supabase initialized');
 
-    print('Starting app...');
     runApp(const MyApp());
   } catch (e) {
-    print('❌ ERROR: $e');
     // Show error if initialization fails
     runApp(MaterialApp(
       home: Scaffold(
