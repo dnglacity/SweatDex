@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'screens/auth_wrapper.dart'; 
 
 
@@ -10,21 +9,18 @@ void main() async {
   print('✓ Flutter binding initialized');
 
   try {
-    print('Loading .env file...');
-    // Load environment variables
-    await dotenv.load(fileName: ".env");
+    
+    
+  
 
-    print('✓ .env file loaded');
+    
     // Check if environment variables are loaded
-    final supabaseUrl = dotenv.env['SUPABASE_URL'];
-    final supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY'];
+    const supabaseUrl = String.fromEnvironment('https://pxxpvhhezmbtbfeoibua.supabase.co');
+    const supabaseAnonKey = String.fromEnvironment('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB4eHB2aGhlem1idGJmZW9pYnVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExO');
 
     print('SUPABASE_URL: $supabaseUrl');
     print('SUPABASE_ANON_KEY: ${supabaseAnonKey?.substring(0, 20)}...');
 
-    if (supabaseUrl == null || supabaseAnonKey == null) {
-      throw Exception('Missing Supabase credentials in .env file');
-    }
 
     // Initialize Supabase
     print('Initializing Supabase...');
