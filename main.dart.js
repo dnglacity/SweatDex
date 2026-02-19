@@ -27880,7 +27880,7 @@ s=q}for(;;)switch(s){case 0:if($.a_==null)A.amt()
 $.a_.toString
 q=3
 s=6
-return A.m(A.akv("",""),$async$aAR)
+return A.m(A.akv("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB4eHB2aGhlem1idGJmZW9pYnVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExODQ1OTIsImV4cCI6MjA4Njc2MDU5Mn0.jNpF0_RYiCEirAQvSsT_3JaulReTjxsZfl0oOuP0_Y0","https://pxxpvhhezmbtbfeoibua.supabase.co"),$async$aAR)
 case 6:if($.a_==null)A.amt()
 n=$.a_
 A.aLx(n.a1N(B.NW),n,"runApp")
