@@ -14,10 +14,16 @@ void main() async {
 
     
     // Check if environment variables are loaded
-    const supabaseUrl = String.fromEnvironment('https://pxxpvhhezmbtbfeoibua.supabase.co');
-    const supabaseAnonKey = String.fromEnvironment('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB4eHB2aGhlem1idGJmZW9pYnVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExO');
-
+    // Check if environment variables are loaded by using their KEYS
+    const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
+    const supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
     
+    if (supabaseUrl.isEmpty || supabaseAnonKey.isEmpty) {
+    throw Exception(
+      'Missing Supabase configuration! '
+      'Ensure you are building with --dart-define-from-file=config.json'
+    );
+  }
 
 
     // Initialize Supabase
