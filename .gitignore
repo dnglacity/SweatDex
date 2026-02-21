@@ -39,10 +39,7 @@ config.json
 
 # --- Local Workspace & Notes ---
 # [Inference] Based on your sidebar: temporary files that don't belong in production
-Notes.txt
 tmp.txt
-bugfix.txt
-Supabase Policies.csv
 .history
 .vscode/
 

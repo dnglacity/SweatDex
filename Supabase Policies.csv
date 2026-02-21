@@ -1,0 +1,17 @@
+schema_name,table_name,policy_name,type,operation,roles_internal,using_expression,with_check_expression
+public,coaches,coaches_insert_own,PERMISSIVE,INSERT,[0],null,(user_id = auth.uid())
+public,coaches,coaches_select_others,PERMISSIVE,SELECT,[0],true,null
+public,coaches,coaches_select_own,PERMISSIVE,SELECT,[0],(user_id = auth.uid()),null
+public,coaches,coaches_update_own,PERMISSIVE,UPDATE,[0],(user_id = auth.uid()),(user_id = auth.uid())
+public,players,players_delete,PERMISSIVE,DELETE,[0],is_team_member(team_id),null
+public,players,players_insert,PERMISSIVE,INSERT,[0],null,is_team_member(team_id)
+public,players,players_select,PERMISSIVE,SELECT,[0],is_team_member(team_id),null
+public,players,players_update,PERMISSIVE,UPDATE,[0],is_team_member(team_id),is_team_member(team_id)
+public,team_coaches,team_coaches_delete,PERMISSIVE,DELETE,[0],(is_team_owner(team_id) OR (coach_id = get_current_coach_id())),null
+public,team_coaches,team_coaches_insert,PERMISSIVE,INSERT,[0],null,is_team_member(team_id)
+public,team_coaches,team_coaches_select,PERMISSIVE,SELECT,[0],is_team_member(team_id),null
+public,team_coaches,team_coaches_update,PERMISSIVE,UPDATE,[0],is_team_owner(team_id),is_team_owner(team_id)
+public,teams,teams_delete,PERMISSIVE,DELETE,[0],is_team_owner(id),null
+public,teams,teams_insert,PERMISSIVE,INSERT,[0],null,(get_current_coach_id() IS NOT NULL)
+public,teams,teams_select,PERMISSIVE,SELECT,[0],is_team_member(id),null
+public,teams,teams_update,PERMISSIVE,UPDATE,[0],is_team_member(id),is_team_member(id)

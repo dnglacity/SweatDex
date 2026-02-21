@@ -1,0 +1,19 @@
+Make the logout option in the three dot menu execute a full logout and return to the login screen
+
+Replace "Welcome Back" with "Apex On Deck"
+
+change the game roster icon on the roster screen to a clipboard.
+
+only show the icons on the top left.
+
+write script to build a new
+
+Generate a supabase table for saved game rosters if needed
+
+If an email of a player exists, add that team to the player's associated account.
+
+Name of account does not have to match as long as email address matches.
+
+The player's team will show up with an icon showing that they are a player and not a coach.
+
+Check if all accounts can be "coach" accounts but only given player permissions if identified as a player by the team owner or added coaches.
