@@ -1,0 +1,209 @@
+[
+  {
+    "schemaname": "public",
+    "tablename": "coaches",
+    "policyname": "coaches_insert_own",
+    "roles": "{public}",
+    "operation": "INSERT",
+    "using_expression": null,
+    "check_expression": "(user_id = auth.uid())"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "coaches",
+    "policyname": "coaches_select_others",
+    "roles": "{public}",
+    "operation": "SELECT",
+    "using_expression": "true",
+    "check_expression": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "coaches",
+    "policyname": "coaches_select_own",
+    "roles": "{public}",
+    "operation": "SELECT",
+    "using_expression": "(user_id = auth.uid())",
+    "check_expression": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "coaches",
+    "policyname": "coaches_update_own",
+    "roles": "{public}",
+    "operation": "UPDATE",
+    "using_expression": "(user_id = auth.uid())",
+    "check_expression": "(user_id = auth.uid())"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "game_rosters",
+    "policyname": "game_rosters_delete",
+    "roles": "{public}",
+    "operation": "DELETE",
+    "using_expression": "is_team_member(team_id)",
+    "check_expression": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "game_rosters",
+    "policyname": "game_rosters_insert",
+    "roles": "{public}",
+    "operation": "INSERT",
+    "using_expression": null,
+    "check_expression": "is_team_member(team_id)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "game_rosters",
+    "policyname": "game_rosters_select",
+    "roles": "{public}",
+    "operation": "SELECT",
+    "using_expression": "is_team_member(team_id)",
+    "check_expression": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "game_rosters",
+    "policyname": "game_rosters_update",
+    "roles": "{public}",
+    "operation": "UPDATE",
+    "using_expression": "is_team_member(team_id)",
+    "check_expression": "is_team_member(team_id)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "player_accounts",
+    "policyname": "player_accounts_delete",
+    "roles": "{public}",
+    "operation": "DELETE",
+    "using_expression": "is_team_member(team_id)",
+    "check_expression": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "player_accounts",
+    "policyname": "player_accounts_insert",
+    "roles": "{public}",
+    "operation": "INSERT",
+    "using_expression": null,
+    "check_expression": "is_team_member(team_id)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "player_accounts",
+    "policyname": "player_accounts_select",
+    "roles": "{public}",
+    "operation": "SELECT",
+    "using_expression": "(is_team_member(team_id) OR (coach_id = get_current_coach_id()))",
+    "check_expression": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "players",
+    "policyname": "players_delete",
+    "roles": "{public}",
+    "operation": "DELETE",
+    "using_expression": "is_team_member(team_id)",
+    "check_expression": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "players",
+    "policyname": "players_insert",
+    "roles": "{public}",
+    "operation": "INSERT",
+    "using_expression": null,
+    "check_expression": "is_team_member(team_id)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "players",
+    "policyname": "players_select",
+    "roles": "{public}",
+    "operation": "SELECT",
+    "using_expression": "is_team_member(team_id)",
+    "check_expression": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "players",
+    "policyname": "players_update",
+    "roles": "{public}",
+    "operation": "UPDATE",
+    "using_expression": "is_team_member(team_id)",
+    "check_expression": "is_team_member(team_id)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "team_coaches",
+    "policyname": "team_coaches_delete",
+    "roles": "{public}",
+    "operation": "DELETE",
+    "using_expression": "(is_team_owner(team_id) OR (coach_id = get_current_coach_id()))",
+    "check_expression": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "team_coaches",
+    "policyname": "team_coaches_insert",
+    "roles": "{public}",
+    "operation": "INSERT",
+    "using_expression": null,
+    "check_expression": "is_team_member(team_id)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "team_coaches",
+    "policyname": "team_coaches_select",
+    "roles": "{public}",
+    "operation": "SELECT",
+    "using_expression": "is_team_member(team_id)",
+    "check_expression": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "team_coaches",
+    "policyname": "team_coaches_update",
+    "roles": "{public}",
+    "operation": "UPDATE",
+    "using_expression": "is_team_owner(team_id)",
+    "check_expression": "is_team_owner(team_id)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "teams",
+    "policyname": "teams_delete",
+    "roles": "{public}",
+    "operation": "DELETE",
+    "using_expression": "is_team_owner(id)",
+    "check_expression": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "teams",
+    "policyname": "teams_insert",
+    "roles": "{public}",
+    "operation": "INSERT",
+    "using_expression": null,
+    "check_expression": "(get_current_coach_id() IS NOT NULL)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "teams",
+    "policyname": "teams_select",
+    "roles": "{public}",
+    "operation": "SELECT",
+    "using_expression": "is_team_member(id)",
+    "check_expression": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "teams",
+    "policyname": "teams_update",
+    "roles": "{public}",
+    "operation": "UPDATE",
+    "using_expression": "is_team_member(id)",
+    "check_expression": "is_team_member(id)"
+  }
+]

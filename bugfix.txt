@@ -1,179 +1,101 @@
 Issue 1:
-PS C:\Users\Derrick\Documents\SweatDex\sweatdex> flutter run --dart-define-from-file=config.json
->> 
-Launching lib\main.dart on LE2125 (wireless) in debug mode...
-Running Gradle task 'assembleDebug'...                           2,096ms
-√ Built build\app\outputs\flutter-apk\app-debug.apk
-Installing build\app\outputs\flutter-apk\app-debug.apk...           5.1s
-D/FlutterJNI(15840): Beginning load of flutter...
-D/FlutterJNI(15840): flutter (null) was loaded normally!
-I/flutter (15840): [IMPORTANT:flutter/shell/platform/android/android_context_vk_impeller.cc(62)] Using the Impeller rendering backend (Vulkan).
-D/FlutterRenderer(15840): Width is zero. 0,0
-I/flutter (15840): supabase.supabase_flutter: INFO: ***** Supabase init completed ***** 
-Syncing files to device LE2125 (wireless)...                        50ms
+V/AutofillManager(13360): requestHideFillUi(null): anchor = null
+D/ViewRootImplExtImpl(13360): the up motion event handled by client, just return
 
-Flutter run key commands.
-r Hot reload. 
-R Hot restart.
-h List all available interactive commands.
-d Detach (terminate "flutter run" but leave application running).
-c Clear the screen
-q Quit (terminate the application on the device).
+══╡ EXCEPTION CAUGHT BY WIDGETS LIBRARY ╞═══════════════════════════════════════════════════════════
+The following assertion was thrown building RawGestureDetector(state:
+RawGestureDetectorState#c4135(gestures: [tap, long press, tap and horizontal drag],
+excludeFromSemantics: true, behavior: translucent)):
+A TextEditingController was used after being disposed.
+Once you have called dispose() on a TextEditingController, it can no longer be used.
 
-A Dart VM Service on LE2125 is available at: http://127.0.0.1:63584/n7fT3Zstqdo=/
-The Flutter DevTools debugger and profiler on LE2125 is available at: http://127.0.0.1:63584/n7fT3Zstqdo=/devtools/?uri=ws://127.0.0.1:63584/n7fT3Zstqdo=/ws
-I/Choreographer(15840): Skipped 195 frames!  The application may be doing too much work on its main thread.
-I/Quality (15840): Skipped: false 111 cost 933.02216 refreshRate 8335908 bit true processName com.example.sweatdex
-E/OplusBracketLog(15840): [OplusViewMirrorManager] updateHostViewRootIfNeeded, not support android.view.ViewRootImpl@e14d2bc
-I/SurfaceView(15840): 148894704 onAttachedToWindow
-D/FlutterRenderer(15840): Width is zero. 0,0
-D/ViewRootImplExtImpl(15840): wrapConfigInfoIntoFlags rotation=0, smallestScreenWidthDp=411, relayoutAsync=false, newFlags=26935296, title=com.example.sweatdex/com.example.sweatdex.MainActivity
-D/VRI[MainActivity](15840): relayoutWindow result, sizeChanged:true, surfaceControlChanged:true, transformHintChanged:true, mSurfaceSize:Point(1440, 3216), mLastSurfaceSize:Point(0, 0), mWidth:-1, mHeight:-1, requestedWidth:1440, requestedHeight:3216, transformHint:0, lastTransformHint:-2147483648, installOrientation:0, displayRotation:0, isSurfaceValid:true, attr.flag:-2122252032, useBlast:true, tmpFrames:ClientWindowFrames{frame=[0,0][1440,3216] display=[0,0][1440,3216] parentFrame=[0,0][0,0]}
-W/VRI[MainActivity](15840): updateBlastSurfaceIfNeeded, surfaceSize:Point(1440, 3216), lastSurfaceSize:Point(0, 0), format:-3, blastBufferQueue:null
-D/BufferQueueConsumer(15840): [](id:3de000000000,api:0,p:-1,c:15840) connect: controlledByApp=false
-D/ExtensionsLoader(15840): createInstance(64bit) : createExtendedFactory
-D/ExtensionsLoader(15840): Opened libSchedAssistExtImpl.so
-I/AdrenoGLES-0(15840): QUALCOMM build                   : a1cf8ab5e3, I428bf45773
-I/AdrenoGLES-0(15840): Build Date                       : 11/09/23
-I/AdrenoGLES-0(15840): OpenGL ES Shader Compiler Version: EV031.35.01.12
-I/AdrenoGLES-0(15840): Local Branch                     :
-I/AdrenoGLES-0(15840): Remote Branch                    : refs/tags/AU_LINUX_ANDROID_LA.UM.9.14.11.00.00.571.148
-I/AdrenoGLES-0(15840): Remote Branch                    : NONE
-I/AdrenoGLES-0(15840): Reconstruct Branch               : NOTHING
-I/AdrenoGLES-0(15840): Build Config                     : S P 10.0.7 AArch64
-I/AdrenoGLES-0(15840): Driver Path                      : /vendor/lib64/egl/libGLESv2_adreno.so
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-I/AdrenoGLES-0(15840): PFP: 0x016dc094, ME: 0x00000000
-I/xample.sweatdex(15840): Compiler allocated 6104KB to compile void android.view.ViewRootImpl.performTraversals()
-D/BufferQueueConsumer(15840): [](id:3de000000001,api:0,p:-1,c:15840) connect: controlledByApp=false
-D/BufferQueueProducer(15840): [VRI[MainActivity]#0(BLAST Consumer)0](id:3de000000000,api:1,p:15840,c:15840) connect: api=1 producerControlledByApp=true
-E/OpenGLRenderer(15840): Unable to match the desired swap behavior.
-D/Dolphin (15840): [App: ST:0, STM:0, STD:1]
-I/SurfaceView(15840): 148894704 visibleChanged -- surfaceCreated
-D/BufferQueueProducer(15840): [SurfaceView[com.example.sweatdex/com.example.sweatdex.MainActivity]#1(BLAST Consumer)1](id:3de000000001,api:1,p:15840,c:15840) connect: api=1 producerControlledByApp=true
-E/qdgralloc(15840): GetGpuPixelFormat: No map for format: 0x38
-E/AdrenoUtils(15840): <validate_memory_layout_input_parmas:1970>: Unknown Format 0
-E/AdrenoUtils(15840): <adreno_init_memory_layout:4720>: Memory Layout input parameter validation failed!
-E/qdgralloc(15840): GetGpuResourceSizeAndDimensions Graphics metadata init failed
-E/Gralloc4(15840): isSupported(1, 1, 56, 1, ...) failed with 1
-E/GraphicBufferAllocator(15840): Failed to allocate (4 x 4) layerCount 1 format 56 usage b00: 1
-E/AHardwareBuffer(15840): GraphicBuffer(w=4, h=4, lc=1) failed (Unknown error -1), handle=0x0
-E/qdgralloc(15840): GetGpuPixelFormat: No map for format: 0x3b
-E/AdrenoUtils(15840): <validate_memory_layout_input_parmas:1970>: Unknown Format 0
-E/AdrenoUtils(15840): <adreno_init_memory_layout:4720>: Memory Layout input parameter validation failed!
-E/qdgralloc(15840): GetGpuResourceSizeAndDimensions Graphics metadata init failed
-E/Gralloc4(15840): isSupported(1, 1, 59, 1, ...) failed with 1
-E/GraphicBufferAllocator(15840): Failed to allocate (4 x 4) layerCount 1 format 59 usage b00: 1
-E/AHardwareBuffer(15840): GraphicBuffer(w=4, h=4, lc=1) failed (Unknown error -1), handle=0x0
-E/qdgralloc(15840): GetGpuPixelFormat: No map for format: 0x38
-E/AdrenoUtils(15840): <validate_memory_layout_input_parmas:1970>: Unknown Format 0
-E/AdrenoUtils(15840): <adreno_init_memory_layout:4720>: Memory Layout input parameter validation failed!
-E/qdgralloc(15840): GetGpuResourceSizeAndDimensions Graphics metadata init failed
-E/Gralloc4(15840): isSupported(1, 1, 56, 1, ...) failed with 1
-E/GraphicBufferAllocator(15840): Failed to allocate (4 x 4) layerCount 1 format 56 usage b00: 1
-E/AHardwareBuffer(15840): GraphicBuffer(w=4, h=4, lc=1) failed (Unknown error -1), handle=0x0
-E/qdgralloc(15840): GetGpuPixelFormat: No map for format: 0x3b
-E/AdrenoUtils(15840): <validate_memory_layout_input_parmas:1970>: Unknown Format 0
-E/AdrenoUtils(15840): <adreno_init_memory_layout:4720>: Memory Layout input parameter validation failed!
-E/qdgralloc(15840): GetGpuResourceSizeAndDimensions Graphics metadata init failed
-E/Gralloc4(15840): isSupported(1, 1, 59, 1, ...) failed with 1
-E/GraphicBufferAllocator(15840): Failed to allocate (4 x 4) layerCount 1 format 59 usage b00: 1
-E/AHardwareBuffer(15840): GraphicBuffer(w=4, h=4, lc=1) failed (Unknown error -1), handle=0x0
-D/SurfaceView(15840): 148894704 handleSyncNoBuffer
-D/ViewRootImplExtImpl(15840): setMaxDequeuedBufferCount: 2
-I/Quality (15840): Skipped: false 14 cost 118.447044 refreshRate 8331774 bit true processName com.example.sweatdex
-D/ViewRootImplExtImpl(15840): wrapConfigInfoIntoFlags rotation=0, smallestScreenWidthDp=411, relayoutAsync=false, newFlags=26935296, title=com.example.sweatdex/com.example.sweatdex.MainActivity
-D/VRI[MainActivity](15840): relayoutWindow result, sizeChanged:false, surfaceControlChanged:false, transformHintChanged:false, mSurfaceSize:Point(1440, 3216), mLastSurfaceSize:Point(1440, 3216), mWidth:1440, mHeight:3216, requestedWidth:1440, requestedHeight:3216, transformHint:0, lastTransformHint:0, installOrientation:0, displayRotation:0, isSurfaceValid:true, attr.flag:-2122252032, useBlast:true, tmpFrames:ClientWindowFrames{frame=[0,0][1440,3216] display=[0,0][1440,3216] parentFrame=[0,0][0,0]}
-W/VRI[MainActivity](15840): updateBlastSurfaceIfNeeded, surfaceSize:Point(1440, 3216), lastSurfaceSize:Point(1440, 3216), format:-3, blastBufferQueue:android.graphics.BLASTBufferQueue@1933725
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-W/VRI[MainActivity](15840): handleResized, msg:5, frameChanged:false, configChanged:false, displayChanged:false, attachedFrameChanged:false, compatScaleChanged:false, pendingDragResizing=false
-D/BLASTBufferQueue(15840): [SurfaceView[com.example.sweatdex/com.example.sweatdex.MainActivity]#1](f:0,a:1) acquireNextBufferLocked size=1440x3062 mFrameNumber=1 applyTransaction=true mTimestamp=181538857559339(auto) mPendingTransactions.size=0 graphicBufferId=68032281968654 transform=0
-D/SurfaceView(15840): 148894704 finishedDrawing
-D/SurfaceView(15840): 148894704 performDrawFinished mAttachedToWindow true
-I/Quality (15840): Skipped: false 4 cost 40.170696 refreshRate 8331018 bit true processName com.example.sweatdex
-I/SurfaceControl(15840):  setExtendedRangeBrightness sc=Surface(name=com.example.sweatdex/com.example.sweatdex.MainActivity)/@0xdaa5108,currentBufferRatio=1.0,desiredRatio=1.0
-D/SurfaceView(15840): 148894704 dispatchDraw mDrawFinished true isAboveParent false (mPrivateFlags & PFLAG_SKIP_DRAW) 128
-D/SurfaceView(15840): 148894704 clearSurfaceViewPort mCornerRadius 0.0
-D/BLASTBufferQueue(15840): [VRI[MainActivity]#0](f:0,a:1) acquireNextBufferLocked size=1440x3216 mFrameNumber=1 applyTransaction=true mTimestamp=181538910498089(auto) mPendingTransactions.size=0 graphicBufferId=68032281968659 transform=0
-D/VRI[MainActivity](15840): Received frameCommittedCallback lastAttemptedDrawFrameNum=1 didProduceBuffer=true syncBuffer=false
-D/VRI[MainActivity](15840): draw finished.
-D/VRI[MainActivity](15840): reportDrawFinished
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/VRI[MainActivity](15840): onFocusEvent true
-D/OplusScrollToTopManager(15840): com.example.sweatdex/com.example.sweatdex.MainActivity,This DecorView@e9e4324[MainActivity] change focus to true
-V/AutofillManager(15840): requestHideFillUi(null): anchor = null
-D/OplusSystemUINavigationGestureExtImpl(15840): get regionString is null Attempt to invoke virtual method 'android.content.ContentResolver android.content.Context.getContentResolver()' on a null object reference
-D/OplusSystemUINavigationGestureExtImpl(15840): regionString = null
-D/OplusInputMethodManagerInternal(15840): get inputMethodManager extension: com.android.internal.view.IInputMethodManager$Stub$Proxy@41225dd
-D/ViewRootImplExtImpl(15840): the up motion event handled by client, just return
-W/WindowOnBackDispatcher(15840): OnBackInvokedCallback is not enabled for the application.
-W/WindowOnBackDispatcher(15840): Set 'android:enableOnBackInvokedCallback="true"' in the application manifest.
-I/ImeTracker(15840): com.example.sweatdex:22864de5: onRequestShow at ORIGIN_CLIENT_SHOW_SOFT_INPUT reason SHOW_SOFT_INPUT
-D/InputMethodManager(15840): showSoftInput() view=io.flutter.embedding.android.FlutterView{b467411 VFE...... .F....ID 0,0-1440,3062 #1 aid=1073741824 viewInfo = } flags=0 reason=SHOW_SOFT_INPUT
-I/ImeTracker(15840): com.example.sweatdex:da3cb5ad: onRequestShow at ORIGIN_CLIENT_SHOW_SOFT_INPUT reason SHOW_SOFT_INPUT
-D/InputMethodManager(15840): showSoftInput() view=io.flutter.embedding.android.FlutterView{b467411 VFE...... .F....ID 0,0-1440,3062 #1 aid=1073741824 viewInfo = } flags=0 reason=SHOW_SOFT_INPUT
-I/Quality (15840): Skipped: false 1 cost 27.972244 refreshRate 16646000 bit true processName com.example.sweatdex
-D/InputConnectionAdaptor(15840): The input method toggled cursor monitoring on
-W/VRI[MainActivity](15840): handleResized abandoned!
-W/VRI[MainActivity](15840): handleResized abandoned!
-D/InsetsController(15840): show(ime(), fromIme=true)
-D/OplusWindowManager(15840): get WMS extension: android.os.BinderProxy@7ca0702
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-W/VRI[MainActivity](15840): handleResized abandoned!
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-I/ImeTracker(15840): com.example.sweatdex:da3cb5ad: onShown
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/ProfileInstaller(15840): Installing profile for com.example.sweatdex
-V/AutofillManager(15840): requestHideFillUi(null): anchor = null
-D/ViewRootImplExtImpl(15840): the up motion event handled by client, just return
-I/Quality (15840): Skipped: false 1 cost 28.997654 refreshRate 16649432 bit true processName com.example.sweatdex
-I/ImeTracker(15840): com.example.sweatdex:76ab59f3: onRequestHide at ORIGIN_CLIENT_HIDE_SOFT_INPUT reason HIDE_SOFT_INPUT
-D/InputConnectionAdaptor(15840): The input method toggled cursor monitoring off
-W/WindowOnBackDispatcher(15840): sendCancelIfRunning: isInProgress=falsecallback=ImeCallback=ImeOnBackInvokedCallback@7964371 Callback=android.window.IOnBackInvokedCallback$Stub$Proxy@a87de14
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-W/VRI[MainActivity](15840): handleResized abandoned!
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-I/Quality (15840): Skipped: true 1 cost 17.607656 refreshRate 16648022 bit true processName com.example.sweatdex
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-I/flutter (15840): Error creating team: PostgrestException(message: new row violates row-level security policy for table "teams", code: 42501, details: Forbidden, hint: null)
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-I/ImeTracker(15840): com.example.sweatdex:bb7a2a1e: onRequestHide at ORIGIN_CLIENT_HIDE_SOFT_INPUT reason HIDE_SOFT_INPUT_BY_INSETS_API
-I/ImeTracker(15840): com.example.sweatdex:76ab59f3: onHidden
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-D/FlutterJNI(15840): Sending viewport metrics to the engine.
-I/Quality (15840): Skipped: false 1 cost 25.469648 refreshRate 16660532 bit true processName com.example.sweatdex
-W/VRI[MainActivity](15840): handleResized abandoned!
-W/VRI[MainActivity](15840): handleResized abandoned!
+The relevant error-causing widget was:
+  TextFormField
+  TextFormField:file:///C:/Users/Derrick/Documents/SweatDex/sweatdex/lib/screens/team_selection_screen.dart:5
+  34:15
 
+When the exception was thrown, this was the stack:
+#0      ChangeNotifier.debugAssertNotDisposed.<anonymous closure>
+(package:flutter/src/foundation/change_notifier.dart:182:9)
+#1      ChangeNotifier.debugAssertNotDisposed (package:flutter/src/foundation/change_notifier.dart:189:6)    
+#2      ChangeNotifier.addListener (package:flutter/src/foundation/change_notifier.dart:271:27)
+#3      _MergingListenable.addListener (package:flutter/src/foundation/change_notifier.dart:500:14)
+#4      _AnimatedState.didUpdateWidget (package:flutter/src/widgets/transitions.dart:119:25)
+#5      StatefulElement.update (package:flutter/src/widgets/framework.dart:5991:55)
+#6      Element.updateChild (package:flutter/src/widgets/framework.dart:4037:15)
+#7      SingleChildRenderObjectElement.update (package:flutter/src/widgets/framework.dart:7122:14)
+#8      Element.updateChild (package:flutter/src/widgets/framework.dart:4037:15)
+#9      ComponentElement.performRebuild (package:flutter/src/widgets/framework.dart:5841:16)
+#10     StatefulElement.performRebuild (package:flutter/src/widgets/framework.dart:5982:11)
+#11     Element.rebuild (package:flutter/src/widgets/framework.dart:5529:7)
+#12     StatefulElement.update (package:flutter/src/widgets/framework.dart:6007:5)
+#13     Element.updateChild (package:flutter/src/widgets/framework.dart:4037:15)
+#14     ComponentElement.performRebuild (package:flutter/src/widgets/framework.dart:5841:16)
+#15     StatefulElement.performRebuild (package:flutter/src/widgets/framework.dart:5982:11)
+#16     Element.rebuild (package:flutter/src/widgets/framework.dart:5529:7)
+#17     StatefulElement.update (package:flutter/src/widgets/framework.dart:6007:5)
+#18     Element.updateChild (package:flutter/src/widgets/framework.dart:4037:15)
+#19     SingleChildRenderObjectElement.update (package:flutter/src/widgets/framework.dart:7122:14)
+#20     Element.updateChild (package:flutter/src/widgets/framework.dart:4037:15)
+#21     ComponentElement.performRebuild (package:flutter/src/widgets/framework.dart:5841:16)
+#22     StatefulElement.performRebuild (package:flutter/src/widgets/framework.dart:5982:11)
+#23     Element.rebuild (package:flutter/src/widgets/framework.dart:5529:7)
+#24     StatefulElement.update (package:flutter/src/widgets/framework.dart:6007:5)
+#25     Element.updateChild (package:flutter/src/widgets/framework.dart:4037:15)
+#26     SingleChildRenderObjectElement.update (package:flutter/src/widgets/framework.dart:7122:14)
+#27     Element.updateChild (package:flutter/src/widgets/framework.dart:4037:15)
+#28     SingleChildRenderObjectElement.update (package:flutter/src/widgets/framework.dart:7122:14)
+#29     Element.updateChild (package:flutter/src/widgets/framework.dart:4037:15)
+#30     SingleChildRenderObjectElement.update (package:flutter/src/widgets/framework.dart:7122:14)
+#31     Element.updateChild (package:flutter/src/widgets/framework.dart:4037:15)
+#32     ComponentElement.performRebuild (package:flutter/src/widgets/framework.dart:5841:16)
+#33     StatefulElement.performRebuild (package:flutter/src/widgets/framework.dart:5982:11)
+#34     Element.rebuild (package:flutter/src/widgets/framework.dart:5529:7)
+#35     BuildScope._tryRebuild (package:flutter/src/widgets/framework.dart:2750:15)
+#36     BuildScope._flushDirtyElements (package:flutter/src/widgets/framework.dart:2807:11)
+#37     BuildOwner.buildScope (package:flutter/src/widgets/framework.dart:3111:18)
+#38     WidgetsBinding.drawFrame (package:flutter/src/widgets/binding.dart:1302:21)
+#39     RendererBinding._handlePersistentFrameCallback (package:flutter/src/rendering/binding.dart:495:5)    
+#40     SchedulerBinding._invokeFrameCallback (package:flutter/src/scheduler/binding.dart:1430:15)
+#41     SchedulerBinding.handleDrawFrame (package:flutter/src/scheduler/binding.dart:1345:9)
+#42     SchedulerBinding._handleDrawFrame (package:flutter/src/scheduler/binding.dart:1198:5)
+#43     _invoke (dart:ui/hooks.dart:356:13)
+#44     PlatformDispatcher._drawFrame (dart:ui/platform_dispatcher.dart:444:5)
+#45     _drawFrame (dart:ui/hooks.dart:328:31)
+
+════════════════════════════════════════════════════════════════════════════════════════════════════
+
+I/ImeTracker(13360): com.example.sweatdex:1e7ead3d: onRequestHide at ORIGIN_CLIENT_HIDE_SOFT_INPUT reason HIDE_SOFT_INPUT
+Another exception was thrown: A RenderFlex overflowed by 99785 pixels on the bottom.
+D/InputConnectionAdaptor(13360): The input method toggled cursor monitoring off
+D/FlutterJNI(13360): Sending viewport metrics to the engine.
+W/WindowOnBackDispatcher(13360): sendCancelIfRunning: isInProgress=falsecallback=ImeCallback=ImeOnBackInvokedCallback@7964371 Callback=android.window.IOnBackInvokedCallback$Stub$Proxy@d7b3f5e
+W/VRI[MainActivity](13360): handleResized abandoned!
+D/FlutterJNI(13360): Sending viewport metrics to the engine.
+D/FlutterJNI(13360): Sending viewport metrics to the engine.
+Another exception was thrown: 'package:flutter/src/widgets/framework.dart': Failed assertion: line 6268 pos
+12: '_dependents.isEmpty': is not true.
+Another exception was thrown: Tried to build dirty widget in the wrong build scope.
+I/Quality (13360): Skipped: true 2 cost 35.43799 refreshRate 16668454 bit true processName com.example.sweatdex
+D/FlutterJNI(13360): Sending viewport metrics to the engine.
+D/FlutterJNI(13360): Sending viewport metrics to the engine.
+D/FlutterJNI(13360): Sending viewport metrics to the engine.
+D/FlutterJNI(13360): Sending viewport metrics to the engine.
+D/FlutterJNI(13360): Sending viewport metrics to the engine.
+D/FlutterJNI(13360): Sending viewport metrics to the engine.
+D/FlutterJNI(13360): Sending viewport metrics to the engine.
+D/FlutterJNI(13360): Sending viewport metrics to the engine.
+D/FlutterJNI(13360): Sending viewport metrics to the engine.
+D/FlutterJNI(13360): Sending viewport metrics to the engine.
+D/FlutterJNI(13360): Sending viewport metrics to the engine.
+D/FlutterJNI(13360): Sending viewport metrics to the engine.
+D/FlutterJNI(13360): Sending viewport metrics to the engine.
+D/FlutterJNI(13360): Sending viewport metrics to the engine.
+I/Quality (13360): local:ime_anim_jank,pkgName:com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME,flag:2,jankCount:1,jankCountLocal:1,preCount:2
+I/Quality (13360): ime_anim_jank:1,50005260,2
+I/ImeTracker(13360): com.example.sweatdex:bd362ca: onRequestHide at ORIGIN_CLIENT_HIDE_SOFT_INPUT reason HIDE_SOFT_INPUT_BY_INSETS_API
+I/ImeTracker(13360): com.example.sweatdex:1e7ead3d: onHidden
+D/FlutterJNI(13360): Sending viewport metrics to the engine.
+D/FlutterJNI(13360): Sending viewport metrics to the engine.
+W/VRI[MainActivity](13360): handleResized abandoned!
+W/VRI[MainActivity](13360): handleResized abandoned!

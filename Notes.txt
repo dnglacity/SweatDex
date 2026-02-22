@@ -1,21 +1,15 @@
-Change the color palette to Blue and Gold.
+AOD v1.3
 
-Make the logout option in the three dot menu execute a full logout and return to the login screen
+Edit tab name font colors on the game_roster_screen so they are White.
 
-Replace "Welcome Back" with "Apex On Deck"
+Once names are placed into either starting or bench, save those positions.
+ 
+Supabase Realtime on game_rosters — Add a .stream() in SavedRosterScreen so roster changes made on another coach's device appear instantly.
 
-change the game roster icon on the roster screen to a clipboard.
+RPC for add_player_account — The auto-link trigger handles new players; add an RPC so coaches can manually link existing players to accounts retroactively from the ManageCoachesScreen.
 
-only show the icons on the top left.
+Player self-view screen — Once a player logs in and sees their team with the "PLAYER" badge, give them a read-only view of their own attendance record and list of teammates.
 
-write script to build a new
+Offline support — Cache game_rosters and players locally and sync on reconnect — useful for coaches in gyms with poor signal.
+coaches.email column — Verify this column exists; addCoachToTeam() and the email-link trigger both query against it. If it's missing, add ALTER TABLE coaches ADD COLUMN email text; and backfill from auth.users.
 
-Generate a supabase table for saved game rosters if needed
-
-If an email of a player exists, add that team to the player's associated account.
-
-Name of account does not have to match as long as email address matches.
-
-The player's team will show up with an icon showing that they are a player and not a coach.
-
-Check if all accounts can be "coach" accounts but only given player permissions if identified as a player by the team owner or added coaches.
