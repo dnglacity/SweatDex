@@ -1,2 +1,2 @@
 Issue 1:
-no team data showing when logging in. Check policies and code for issues.
+unable to add coach to team; error says no account found. The account is verified to be in the public.users table.

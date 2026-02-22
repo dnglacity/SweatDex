@@ -1,9 +1,43 @@
 AOD v1.7
 Review supabase_blueprint.json and supabase_policies.json.
 
+Separate user first name and last name.
+
+Make users enter their new passwords twice when signing up. New users can enter an athlete id.
+
+Add a persistent user account setting button in the options menu. Add an option to delete account (add a popup with checkbox to confrim). If a user is a team owner, block the delete. Notify user to transfer ownership or delete team. All other coaches must be removed from the team before that team may be deleted.
+
+In account settings, allow the user to edit their name, default nickname (optional; coaches can change it locally to their respective rosters), and email. 
+
+
+
+
+Make it so each user is limited to owning 5 teams.
+
+In team creation, make it so when users type in a sport, suggestions are given and are tied to a sport id. This is to link teams of the same sport in the future when this application manages matches and games.
+
+The current public.teams table has 3 teams and only Badminton and Track/Field as teams; create a list of all high school sports. If a good option, add a table with all sports and a sport id. Or however this can be best optimized.
+
+Maintain the edit team option in the options menu throughout the team flow. 
+
+
+
+Change student email to ask for athlete email. And athlete id rather than student ID. Create a new, optional field for parent/guardian email when adding a player.
+The goal is to make this program universal. 
+
+Split the new player form into 2 pages.
+When adding a player, first ask for athlete email. Once email is submitted, check for existing user. If user exists, populate the second page with first name, last name, and athlete ID.
+Add athlete grade (optional; all grades automatically increase by 1 on July 1 every year; grade is local only to the team and only managed by owner and coach).
+
+Automatically link users to parent/guardian emails when both ends are created. A linked parent/guardian can see the same player view.
+
+
+
+In add team member, add the following roles: Team Parent and Team Manager.
+
+
+
+
 
 Identify and execute optimization and performance edits.
-
-
-
 
