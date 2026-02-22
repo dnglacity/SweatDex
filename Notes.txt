@@ -1,3 +1,5 @@
+Change the color palette to Blue and Gold.
+
 Make the logout option in the three dot menu execute a full logout and return to the login screen
 
 Replace "Welcome Back" with "Apex On Deck"
