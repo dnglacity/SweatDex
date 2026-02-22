@@ -1,0 +1,4 @@
+add a join team option in the team selection screen. users will input a code from the team's coaches.
+create these roles: player, assistant coach, team manager, parents, Parent lead
+Coaches can generate a random 7 character code, each for a specific role to prevent assigning incorrect roles.
+
