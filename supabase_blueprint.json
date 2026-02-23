@@ -4,7 +4,7 @@
     "column_name": "id",
     "data_type": "uuid",
     "is_nullable": "NO",
-    "column_default": "gen_random_uuid()"
+    "column_default": "uuid_generate_v4()"
   },
   {
     "table_name": "game_rosters",
@@ -23,7 +23,7 @@
   {
     "table_name": "game_rosters",
     "column_name": "game_date",
-    "data_type": "date",
+    "data_type": "text",
     "is_nullable": "YES",
     "column_default": null
   },
@@ -58,13 +58,6 @@
   {
     "table_name": "game_rosters",
     "column_name": "created_at",
-    "data_type": "timestamp with time zone",
-    "is_nullable": "NO",
-    "column_default": "now()"
-  },
-  {
-    "table_name": "game_rosters",
-    "column_name": "updated_at",
     "data_type": "timestamp with time zone",
     "is_nullable": "NO",
     "column_default": "now()"
@@ -109,7 +102,7 @@
     "column_name": "id",
     "data_type": "uuid",
     "is_nullable": "NO",
-    "column_default": "gen_random_uuid()"
+    "column_default": "uuid_generate_v4()"
   },
   {
     "table_name": "players",
@@ -120,10 +113,17 @@
   },
   {
     "table_name": "players",
+    "column_name": "user_id",
+    "data_type": "uuid",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "players",
     "column_name": "name",
     "data_type": "text",
     "is_nullable": "NO",
-    "column_default": null
+    "column_default": "''::text"
   },
   {
     "table_name": "players",
@@ -136,48 +136,6 @@
     "table_name": "players",
     "column_name": "athlete_email",
     "data_type": "text",
-    "is_nullable": "YES",
-    "column_default": null
-  },
-  {
-    "table_name": "players",
-    "column_name": "jersey_number",
-    "data_type": "text",
-    "is_nullable": "YES",
-    "column_default": null
-  },
-  {
-    "table_name": "players",
-    "column_name": "nickname",
-    "data_type": "text",
-    "is_nullable": "YES",
-    "column_default": null
-  },
-  {
-    "table_name": "players",
-    "column_name": "created_at",
-    "data_type": "timestamp with time zone",
-    "is_nullable": "YES",
-    "column_default": "now()"
-  },
-  {
-    "table_name": "players",
-    "column_name": "status",
-    "data_type": "text",
-    "is_nullable": "YES",
-    "column_default": "'present'::text"
-  },
-  {
-    "table_name": "players",
-    "column_name": "position",
-    "data_type": "text",
-    "is_nullable": "YES",
-    "column_default": null
-  },
-  {
-    "table_name": "players",
-    "column_name": "user_id",
-    "data_type": "uuid",
     "is_nullable": "YES",
     "column_default": null
   },
@@ -198,16 +156,51 @@
   {
     "table_name": "players",
     "column_name": "grade_updated_at",
-    "data_type": "date",
+    "data_type": "timestamp with time zone",
     "is_nullable": "YES",
     "column_default": null
+  },
+  {
+    "table_name": "players",
+    "column_name": "jersey_number",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "players",
+    "column_name": "nickname",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "players",
+    "column_name": "position",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "players",
+    "column_name": "status",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": "'present'::text"
+  },
+  {
+    "table_name": "players",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "column_default": "now()"
   },
   {
     "table_name": "sports",
     "column_name": "id",
     "data_type": "uuid",
     "is_nullable": "NO",
-    "column_default": "gen_random_uuid()"
+    "column_default": "uuid_generate_v4()"
   },
   {
     "table_name": "sports",
@@ -220,8 +213,8 @@
     "table_name": "sports",
     "column_name": "category",
     "data_type": "text",
-    "is_nullable": "YES",
-    "column_default": null
+    "is_nullable": "NO",
+    "column_default": "'Year-Round'::text"
   },
   {
     "table_name": "sports",
@@ -235,7 +228,7 @@
     "column_name": "id",
     "data_type": "uuid",
     "is_nullable": "NO",
-    "column_default": "gen_random_uuid()"
+    "column_default": "uuid_generate_v4()"
   },
   {
     "table_name": "team_members",
@@ -256,7 +249,7 @@
     "column_name": "role",
     "data_type": "text",
     "is_nullable": "NO",
-    "column_default": "'coach'::text"
+    "column_default": "'player'::text"
   },
   {
     "table_name": "team_members",
@@ -277,7 +270,7 @@
     "column_name": "id",
     "data_type": "uuid",
     "is_nullable": "NO",
-    "column_default": "gen_random_uuid()"
+    "column_default": "uuid_generate_v4()"
   },
   {
     "table_name": "teams",
@@ -290,15 +283,8 @@
     "table_name": "teams",
     "column_name": "sport",
     "data_type": "text",
-    "is_nullable": "YES",
+    "is_nullable": "NO",
     "column_default": "'General'::text"
-  },
-  {
-    "table_name": "teams",
-    "column_name": "created_at",
-    "data_type": "timestamp with time zone",
-    "is_nullable": "YES",
-    "column_default": "now()"
   },
   {
     "table_name": "teams",
@@ -308,11 +294,25 @@
     "column_default": null
   },
   {
+    "table_name": "teams",
+    "column_name": "created_by",
+    "data_type": "uuid",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "teams",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
     "table_name": "users",
     "column_name": "id",
     "data_type": "uuid",
     "is_nullable": "NO",
-    "column_default": "gen_random_uuid()"
+    "column_default": "uuid_generate_v4()"
   },
   {
     "table_name": "users",
@@ -320,34 +320,6 @@
     "data_type": "uuid",
     "is_nullable": "NO",
     "column_default": null
-  },
-  {
-    "table_name": "users",
-    "column_name": "name",
-    "data_type": "text",
-    "is_nullable": "NO",
-    "column_default": "''::text"
-  },
-  {
-    "table_name": "users",
-    "column_name": "email",
-    "data_type": "text",
-    "is_nullable": "NO",
-    "column_default": "''::text"
-  },
-  {
-    "table_name": "users",
-    "column_name": "organization",
-    "data_type": "text",
-    "is_nullable": "YES",
-    "column_default": null
-  },
-  {
-    "table_name": "users",
-    "column_name": "created_at",
-    "data_type": "timestamp with time zone",
-    "is_nullable": "NO",
-    "column_default": "now()"
   },
   {
     "table_name": "users",
@@ -365,6 +337,13 @@
   },
   {
     "table_name": "users",
+    "column_name": "name",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "users",
     "column_name": "nickname",
     "data_type": "text",
     "is_nullable": "YES",
@@ -374,6 +353,34 @@
     "table_name": "users",
     "column_name": "athlete_id",
     "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "users",
+    "column_name": "email",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "users",
+    "column_name": "organization",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "users",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "v_owner_user_id",
+    "column_name": "id",
+    "data_type": "uuid",
     "is_nullable": "YES",
     "column_default": null
   }

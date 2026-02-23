@@ -1,0 +1,107 @@
+[
+  {
+    "schema_name": "private",
+    "function_name": "get_my_user_id",
+    "arguments": "",
+    "return_type": "uuid",
+    "security_type": "Security Definer"
+  },
+  {
+    "schema_name": "public",
+    "function_name": "auto_link_player_v1_5",
+    "arguments": "",
+    "return_type": "trigger",
+    "security_type": "Security Definer"
+  },
+  {
+    "schema_name": "public",
+    "function_name": "create_team",
+    "arguments": "p_team_name text, p_sport text DEFAULT 'General'::text, p_sport_id uuid DEFAULT NULL::uuid",
+    "return_type": "uuid",
+    "security_type": "Security Definer"
+  },
+  {
+    "schema_name": "public",
+    "function_name": "create_team_membership_v1_5",
+    "arguments": "",
+    "return_type": "trigger",
+    "security_type": "Security Definer"
+  },
+  {
+    "schema_name": "public",
+    "function_name": "fn_create_team_membership",
+    "arguments": "",
+    "return_type": "trigger",
+    "security_type": "Security Definer"
+  },
+  {
+    "schema_name": "public",
+    "function_name": "fn_link_new_user_to_existing_player",
+    "arguments": "",
+    "return_type": "trigger",
+    "security_type": "Security Invoker"
+  },
+  {
+    "schema_name": "public",
+    "function_name": "fn_set_player_user_id",
+    "arguments": "",
+    "return_type": "trigger",
+    "security_type": "Security Definer"
+  },
+  {
+    "schema_name": "public",
+    "function_name": "get_current_user_id",
+    "arguments": "",
+    "return_type": "uuid",
+    "security_type": "Security Definer"
+  },
+  {
+    "schema_name": "public",
+    "function_name": "get_team_role",
+    "arguments": "p_team_id uuid",
+    "return_type": "text",
+    "security_type": "Security Definer"
+  },
+  {
+    "schema_name": "public",
+    "function_name": "handle_new_user",
+    "arguments": "",
+    "return_type": "trigger",
+    "security_type": "Security Definer"
+  },
+  {
+    "schema_name": "public",
+    "function_name": "is_team_member",
+    "arguments": "p_team_id uuid",
+    "return_type": "bool",
+    "security_type": "Security Definer"
+  },
+  {
+    "schema_name": "public",
+    "function_name": "is_team_owner",
+    "arguments": "p_team_id uuid",
+    "return_type": "bool",
+    "security_type": "Security Definer"
+  },
+  {
+    "schema_name": "public",
+    "function_name": "set_player_user_id_v1_5",
+    "arguments": "",
+    "return_type": "trigger",
+    "security_type": "Security Definer"
+  },
+  {
+    "schema_name": "public",
+    "function_name": "sync_player_to_user_v1_5",
+    "arguments": "",
+    "return_type": "trigger",
+    "security_type": "Security Definer"
+  },
+  {
+    "schema_name": "public",
+    "function_name": "sync_user_name",
+    "arguments": "",
+    "return_type": "trigger",
+    "security_type": "Security Invoker"
+  }
+]

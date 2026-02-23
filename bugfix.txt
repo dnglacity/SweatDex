@@ -1,26 +1,6 @@
-Issue 1:
-Attempted to add coach to team; although coach appeared after refreshing and accessing team member screen.
-supabase.auth: INFO: Signing out user with scope: SignOutScope.local 
-addMemberToTeam error: PostgrestException(message: insert or update on table "team_members" violates foreign
-key constraint "team_members_user_id_fkey", code: 23503, details: Key
-(user_id)=(bafeeb7e-faa0-40fb-8f0a-b4ea0be87f2e) is not present in table "users"., hint: null)
+#Issue 1:
+Created team does not appear on team_selection_screen.
 
-Issue 2:
-getTeams: user profile not found yet, retry 1 of 6…
-getTeams: user profile not found yet, retry 2 of 6…
-getTeams: user profile not found yet, retry 3 of 6…
-getTeams: user profile not found yet, retry 4 of 6…
-getTeams: user profile not found yet, retry 5 of 6…
-getTeams error: Exception: User profile not found. Please sign out and sign in again.
-
-Issue 3:
-Attempting to create a new team:
-createTeam error: PostgrestException(message: insert or update on table "team_members" violates foreign key
-constraint "team_members_user_id_fkey", code: 23503, details: Key
-(user_id)=(66119b51-9a68-4e6f-81dc-00d87f860bad) is not present in table "users"., hint: null)
-
-
-
-Issue 4:
-Attempt to change email:
-Database update failed: postgrestexception(message: no account found for email: test@email.com, code: P0001, details: , hint: null)
+#Issue 2:
+Attempted to change user email;
+Database update failed: PostgrestException(message: Could not find the function public.change_user_email(p_new_email, p_old_email) in the schema cache, code: PGRST202, details: Searched for the function public.change_user_email with parameters p_new_email, p_old_email or with a single unnamed json/jsonb parameter, but no matches were found in the schema cache., hint: null)

@@ -1,1 +1,8 @@
-Completely delete the subabase database and create new tables and policies.
+AOD v1.9
+Review .json files; and review bugfix.txt;
+
+
+
+
+
+Identify and execute optimization and performance edits.

@@ -1,107 +1,17 @@
 [
   {
     "schemaname": "public",
-    "tablename": "game_rosters",
-    "policyname": "game_rosters_delete",
-    "roles": "{authenticated}",
-    "operation": "DELETE",
-    "using_expression": "(( SELECT get_team_role(game_rosters.team_id) AS get_team_role) = ANY (ARRAY['owner'::text, 'coach'::text]))",
-    "check_expression": null
-  },
-  {
-    "schemaname": "public",
-    "tablename": "game_rosters",
-    "policyname": "game_rosters_insert",
-    "roles": "{authenticated}",
-    "operation": "INSERT",
-    "using_expression": null,
-    "check_expression": "(( SELECT get_team_role(game_rosters.team_id) AS get_team_role) = ANY (ARRAY['owner'::text, 'coach'::text]))"
-  },
-  {
-    "schemaname": "public",
-    "tablename": "game_rosters",
-    "policyname": "game_rosters_select",
+    "tablename": "players",
+    "policyname": "players_select_member",
     "roles": "{authenticated}",
     "operation": "SELECT",
-    "using_expression": "( SELECT is_team_member(game_rosters.team_id) AS is_team_member)",
+    "using_expression": "(team_id IN ( SELECT team_members.team_id\n   FROM team_members\n  WHERE (team_members.user_id = private.get_my_user_id())))",
     "check_expression": null
-  },
-  {
-    "schemaname": "public",
-    "tablename": "game_rosters",
-    "policyname": "game_rosters_update",
-    "roles": "{authenticated}",
-    "operation": "UPDATE",
-    "using_expression": "(( SELECT get_team_role(game_rosters.team_id) AS get_team_role) = ANY (ARRAY['owner'::text, 'coach'::text]))",
-    "check_expression": "(( SELECT get_team_role(game_rosters.team_id) AS get_team_role) = ANY (ARRAY['owner'::text, 'coach'::text]))"
-  },
-  {
-    "schemaname": "public",
-    "tablename": "guardian_links",
-    "policyname": "guardian_links_delete",
-    "roles": "{authenticated}",
-    "operation": "DELETE",
-    "using_expression": "(EXISTS ( SELECT 1\n   FROM players p\n  WHERE ((p.id = guardian_links.player_id) AND (EXISTS ( SELECT 1\n           FROM team_members tm\n          WHERE ((tm.team_id = p.team_id) AND (tm.user_id = ( SELECT users.id\n                   FROM users\n                  WHERE (users.user_id = auth.uid()))) AND (tm.role = 'owner'::text)))))))",
-    "check_expression": null
-  },
-  {
-    "schemaname": "public",
-    "tablename": "guardian_links",
-    "policyname": "guardian_links_insert",
-    "roles": "{authenticated}",
-    "operation": "INSERT",
-    "using_expression": null,
-    "check_expression": "(EXISTS ( SELECT 1\n   FROM players p\n  WHERE ((p.id = guardian_links.player_id) AND (EXISTS ( SELECT 1\n           FROM team_members tm\n          WHERE ((tm.team_id = p.team_id) AND (tm.user_id = ( SELECT users.id\n                   FROM users\n                  WHERE (users.user_id = auth.uid()))) AND (tm.role = ANY (ARRAY['owner'::text, 'coach'::text]))))))))"
-  },
-  {
-    "schemaname": "public",
-    "tablename": "guardian_links",
-    "policyname": "guardian_links_select",
-    "roles": "{authenticated}",
-    "operation": "SELECT",
-    "using_expression": "((user_id = ( SELECT users.id\n   FROM users\n  WHERE (users.user_id = auth.uid()))) OR (EXISTS ( SELECT 1\n   FROM players p\n  WHERE ((p.id = guardian_links.player_id) AND (EXISTS ( SELECT 1\n           FROM team_members tm\n          WHERE ((tm.team_id = p.team_id) AND (tm.user_id = ( SELECT users.id\n                   FROM users\n                  WHERE (users.user_id = auth.uid()))))))))))",
-    "check_expression": null
-  },
-  {
-    "schemaname": "public",
-    "tablename": "players",
-    "policyname": "players_delete",
-    "roles": "{authenticated}",
-    "operation": "DELETE",
-    "using_expression": "(( SELECT get_team_role(players.team_id) AS get_team_role) = ANY (ARRAY['owner'::text, 'coach'::text]))",
-    "check_expression": null
-  },
-  {
-    "schemaname": "public",
-    "tablename": "players",
-    "policyname": "players_insert",
-    "roles": "{authenticated}",
-    "operation": "INSERT",
-    "using_expression": null,
-    "check_expression": "(( SELECT get_team_role(players.team_id) AS get_team_role) = ANY (ARRAY['owner'::text, 'coach'::text]))"
-  },
-  {
-    "schemaname": "public",
-    "tablename": "players",
-    "policyname": "players_select",
-    "roles": "{authenticated}",
-    "operation": "SELECT",
-    "using_expression": "((user_id = ( SELECT get_current_user_id() AS get_current_user_id)) OR ( SELECT is_team_member(players.team_id) AS is_team_member))",
-    "check_expression": null
-  },
-  {
-    "schemaname": "public",
-    "tablename": "players",
-    "policyname": "players_update",
-    "roles": "{authenticated}",
-    "operation": "UPDATE",
-    "using_expression": "((( SELECT get_team_role(players.team_id) AS get_team_role) = ANY (ARRAY['owner'::text, 'coach'::text])) OR (user_id = ( SELECT get_current_user_id() AS get_current_user_id)))",
-    "check_expression": "((( SELECT get_team_role(players.team_id) AS get_team_role) = ANY (ARRAY['owner'::text, 'coach'::text])) OR (user_id = ( SELECT get_current_user_id() AS get_current_user_id)))"
   },
   {
     "schemaname": "public",
     "tablename": "sports",
-    "policyname": "sports_select_all",
+    "policyname": "sports_select_authenticated",
     "roles": "{authenticated}",
     "operation": "SELECT",
     "using_expression": "true",
@@ -109,75 +19,12 @@
   },
   {
     "schemaname": "public",
-    "tablename": "team_members",
-    "policyname": "team_members_delete",
-    "roles": "{authenticated}",
-    "operation": "DELETE",
-    "using_expression": "(( SELECT is_team_owner(team_members.team_id) AS is_team_owner) OR (user_id = ( SELECT get_current_user_id() AS get_current_user_id)))",
-    "check_expression": null
-  },
-  {
-    "schemaname": "public",
-    "tablename": "team_members",
-    "policyname": "team_members_insert",
-    "roles": "{authenticated}",
-    "operation": "INSERT",
-    "using_expression": null,
-    "check_expression": "(( SELECT get_team_role(team_members.team_id) AS get_team_role) = ANY (ARRAY['owner'::text, 'coach'::text]))"
-  },
-  {
-    "schemaname": "public",
-    "tablename": "team_members",
-    "policyname": "team_members_select",
+    "tablename": "teams",
+    "policyname": "teams_select_member",
     "roles": "{authenticated}",
     "operation": "SELECT",
-    "using_expression": "( SELECT is_team_member(team_members.team_id) AS is_team_member)",
+    "using_expression": "(id IN ( SELECT team_members.team_id\n   FROM team_members\n  WHERE (team_members.user_id = private.get_my_user_id())))",
     "check_expression": null
-  },
-  {
-    "schemaname": "public",
-    "tablename": "team_members",
-    "policyname": "team_members_update",
-    "roles": "{authenticated}",
-    "operation": "UPDATE",
-    "using_expression": "( SELECT is_team_owner(team_members.team_id) AS is_team_owner)",
-    "check_expression": "( SELECT is_team_owner(team_members.team_id) AS is_team_owner)"
-  },
-  {
-    "schemaname": "public",
-    "tablename": "teams",
-    "policyname": "teams_delete",
-    "roles": "{authenticated}",
-    "operation": "DELETE",
-    "using_expression": "( SELECT is_team_owner(teams.id) AS is_team_owner)",
-    "check_expression": null
-  },
-  {
-    "schemaname": "public",
-    "tablename": "teams",
-    "policyname": "teams_insert",
-    "roles": "{authenticated}",
-    "operation": "INSERT",
-    "using_expression": null,
-    "check_expression": "(( SELECT get_current_user_id() AS get_current_user_id) IS NOT NULL)"
-  },
-  {
-    "schemaname": "public",
-    "tablename": "teams",
-    "policyname": "teams_select",
-    "roles": "{authenticated}",
-    "operation": "SELECT",
-    "using_expression": "( SELECT is_team_member(teams.id) AS is_team_member)",
-    "check_expression": null
-  },
-  {
-    "schemaname": "public",
-    "tablename": "teams",
-    "policyname": "teams_update",
-    "roles": "{authenticated}",
-    "operation": "UPDATE",
-    "using_expression": "( SELECT is_team_owner(teams.id) AS is_team_owner)",
-    "check_expression": "( SELECT is_team_owner(teams.id) AS is_team_owner)"
   },
   {
     "schemaname": "public",
@@ -186,7 +33,7 @@
     "roles": "{authenticated}",
     "operation": "INSERT",
     "using_expression": null,
-    "check_expression": "(user_id = ( SELECT auth.uid() AS uid))"
+    "check_expression": "(user_id = auth.uid())"
   },
   {
     "schemaname": "public",
@@ -194,16 +41,7 @@
     "policyname": "users_select_own",
     "roles": "{authenticated}",
     "operation": "SELECT",
-    "using_expression": "(user_id = ( SELECT auth.uid() AS uid))",
-    "check_expression": null
-  },
-  {
-    "schemaname": "public",
-    "tablename": "users",
-    "policyname": "users_select_team_members",
-    "roles": "{authenticated}",
-    "operation": "SELECT",
-    "using_expression": "(EXISTS ( SELECT 1\n   FROM (team_members tm1\n     JOIN team_members tm2 ON ((tm1.team_id = tm2.team_id)))\n  WHERE ((tm1.user_id = ( SELECT get_current_user_id() AS get_current_user_id)) AND (tm2.user_id = users.id))))",
+    "using_expression": "((user_id = auth.uid()) OR (id IN ( SELECT tm2.user_id\n   FROM (team_members tm1\n     JOIN team_members tm2 USING (team_id))\n  WHERE (tm1.user_id = private.get_my_user_id()))))",
     "check_expression": null
   },
   {
@@ -212,7 +50,7 @@
     "policyname": "users_update_own",
     "roles": "{authenticated}",
     "operation": "UPDATE",
-    "using_expression": "(user_id = ( SELECT auth.uid() AS uid))",
-    "check_expression": "(user_id = ( SELECT auth.uid() AS uid))"
+    "using_expression": "(user_id = auth.uid())",
+    "check_expression": null
   }
 ]

@@ -2,20 +2,27 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/foundation.dart';
 
 // =============================================================================
-// auth_service.dart  (AOD v1.7 — updated)
+// auth_service.dart  (AOD v1.8 — Efficiency Rebuild)
 //
-// CHANGE (Notes.txt v1.7 — Email Change):
-//   • changeEmail() — new method. Password-verifies the current user, then
-//     calls the `change_user_email` SECURITY DEFINER RPC which cascades the
-//     new email across:
-//       – public.users.email
-//       – players.athlete_email  (where athlete_email = old email)
-//       – players.guardian_email (where guardian_email = old email)
-//     After the DB update, calls Supabase Auth updateUser() to change the
-//     login email in auth.users.
+// CHANGES (Notes.txt — "make Supabase integration more efficient"):
 //
-// All prior v1.7 methods retained unchanged:
-//   signUp, signIn, updateProfile, deleteAccount, signOut, resetPassword
+//   1. signUp() — removed the _updateUserRowWithRetry() polling loop.
+//      The new DB trigger (handle_new_user) runs SECURITY DEFINER with
+//      SET search_path = public and is reliably fast.  Organisation and
+//      athlete_id are now passed as raw_user_meta_data at sign-up time;
+//      the trigger reads them and writes them directly to public.users.
+//      This eliminates the 300 ms × 5 retry loop that previously ran on
+//      every sign-up.
+//
+//   2. updateProfile() — no change needed; already optimal.
+//
+//   3. changeEmail() — the re-sign-in step is kept (required for Supabase
+//      password verification pattern).  No other changes.
+//
+//   4. deleteAccount() — calls the RPC which handles all DB work atomically;
+//      no change needed.
+//
+//   5. Removed _updateUserRowWithRetry() and all associated constants.
 // =============================================================================
 
 class AuthService {
@@ -31,9 +38,12 @@ class AuthService {
 
   // ── Sign Up ───────────────────────────────────────────────────────────────
 
-  /// Creates a new auth user.
-  /// CHANGE (v1.7): accepts firstName / lastName instead of name.
-  /// athleteId is optional.
+  /// Creates a new auth user and public profile.
+  ///
+  /// CHANGE (v1.8): organisation and athlete_id are embedded in
+  /// raw_user_meta_data at sign-up time.  The handle_new_user DB trigger
+  /// (SECURITY DEFINER) reads them and writes them to public.users
+  /// immediately — no follow-up UPDATE or retry loop needed.
   Future<AuthResponse> signUp({
     required String email,
     required String password,
@@ -47,63 +57,20 @@ class AuthService {
       password: password,
       data: {
         'first_name': firstName,
-        'last_name': lastName,
-        // Keep combined `name` so existing DB trigger still populates name col.
+        'last_name':  lastName,
+        // Keep combined name for any legacy consumers.
         'name': '${firstName.trim()} ${lastName.trim()}'.trim(),
         if (organization != null && organization.isNotEmpty)
           'organization': organization,
-        if (athleteId != null && athleteId.isNotEmpty) 'athlete_id': athleteId,
+        if (athleteId != null && athleteId.isNotEmpty)
+          'athlete_id': athleteId,
       },
     );
 
-    // Update organization / athlete_id after the trigger creates the users row.
-    if (response.user != null) {
-      final updates = <String, dynamic>{};
-      if (organization != null && organization.isNotEmpty) {
-        updates['organization'] = organization;
-      }
-      if (athleteId != null && athleteId.isNotEmpty) {
-        updates['athlete_id'] = athleteId;
-      }
-      if (updates.isNotEmpty) {
-        await _updateUserRowWithRetry(response.user!.id, updates);
-      }
-    }
-
+    // CHANGE: No post-sign-up update call needed.  The DB trigger (Section 7
+    // of supabase_migration.sql) handles creating the public.users row with
+    // all fields from raw_user_meta_data in a single SECURITY DEFINER INSERT.
     return response;
-  }
-
-  // ── Retry helper ──────────────────────────────────────────────────────────
-
-  static const int _maxTriggerRetries = 5;
-  static const Duration _triggerRetryDelay = Duration(milliseconds: 300);
-
-  /// Polls until the `users` row for [authUserId] exists, then writes [fields].
-  /// Needed because the on_auth_user_created trigger commits asynchronously.
-  Future<void> _updateUserRowWithRetry(
-      String authUserId, Map<String, dynamic> fields) async {
-    for (int attempt = 1; attempt <= _maxTriggerRetries; attempt++) {
-      await Future.delayed(_triggerRetryDelay);
-      try {
-        final existing = await _supabase
-            .from('users')
-            .select('id')
-            .eq('user_id', authUserId)
-            .maybeSingle();
-
-        if (existing != null) {
-          await _supabase
-              .from('users')
-              .update(fields)
-              .eq('user_id', authUserId);
-          return;
-        }
-      } catch (e) {
-        debugPrint('⚠️ User row update attempt $attempt failed: $e');
-      }
-    }
-    debugPrint(
-        '⚠️ Could not update user row after $_maxTriggerRetries attempts.');
   }
 
   // ── Sign In ───────────────────────────────────────────────────────────────
@@ -125,20 +92,24 @@ class AuthService {
     try {
       final authUser = currentUser;
       if (authUser == null) return null;
+      // OPTIMIZATION: explicit column list reduces payload.
       return await _supabase
           .from('users')
-          .select()
+          .select(
+            'id, user_id, first_name, last_name, nickname, athlete_id, '
+            'email, organization, created_at',
+          )
           .eq('user_id', authUser.id)
           .single();
     } catch (e) {
-      debugPrint('Get user profile error: $e');
+      debugPrint('getCurrentUserProfile error: $e');
       return null;
     }
   }
 
   /// Updates the user's profile fields in public.users.
   /// Accepts any subset of: firstName, lastName, nickname, organization, athleteId.
-  /// NOTE: email is intentionally excluded — use changeEmail() instead.
+  /// NOTE: email changes must use changeEmail() — it is intentionally excluded.
   Future<void> updateProfile({
     String? firstName,
     String? lastName,
@@ -149,25 +120,27 @@ class AuthService {
     final authUser = currentUser;
     if (authUser == null) throw Exception('Not logged in.');
 
+    // OPTIMIZATION: only build the map for fields that were actually supplied,
+    // so we don't send null values or overwrite data unnecessarily.
     final updates = <String, dynamic>{};
-    if (firstName != null) updates['first_name'] = firstName;
-    if (lastName != null) updates['last_name'] = lastName;
-    if (nickname != null) updates['nickname'] = nickname;
-    if (organization != null) updates['organization'] = organization;
-    if (athleteId != null) updates['athlete_id'] = athleteId;
+    if (firstName     != null) updates['first_name']   = firstName;
+    if (lastName      != null) updates['last_name']    = lastName;
+    if (nickname      != null) updates['nickname']     = nickname;
+    if (organization  != null) updates['organization'] = organization;
+    if (athleteId     != null) updates['athlete_id']   = athleteId;
 
     if (updates.isEmpty) return;
 
     await _supabase.from('users').update(updates).eq('user_id', authUser.id);
   }
 
-  // ── Change Email (NEW — Notes.txt v1.7) ──────────────────────────────────
+  // ── Change Email ──────────────────────────────────────────────────────────
 
   /// Changes the current user's email address everywhere in the database.
   ///
   /// FLOW:
   ///   1. Re-authenticates with [currentPassword] to verify identity.
-  ///   2. Calls the `change_user_email` SECURITY DEFINER RPC which atomically:
+  ///   2. Calls the change_user_email SECURITY DEFINER RPC which atomically:
   ///        – Updates public.users.email
   ///        – Updates players.athlete_email where it matches the old email
   ///        – Updates players.guardian_email where it matches the old email
@@ -182,12 +155,10 @@ class AuthService {
     if (authUser == null) throw Exception('Not logged in.');
     if (authUser.email == null) throw Exception('Current email not found.');
 
-    // Step 1 — verify current password by re-signing in.
-    // Supabase does not have a standalone "verify password" endpoint;
-    // re-signing in with email+password is the standard pattern.
+    // Step 1: verify current password by re-signing in.
     try {
       await _supabase.auth.signInWithPassword(
-        email: authUser.email!,
+        email:    authUser.email!,
         password: currentPassword,
       );
     } catch (e) {
@@ -201,16 +172,13 @@ class AuthService {
       throw Exception('New email is the same as the current email.');
     }
 
-    // Step 2 — cascade the email change across public tables via SECURITY
-    // DEFINER RPC (bypasses RLS so all rows are updated even if they belong
-    // to players on other teams).
+    // Step 2: cascade the change across public tables via SECURITY DEFINER RPC.
     try {
       await _supabase.rpc('change_user_email', params: {
         'p_old_email': oldEmail,
         'p_new_email': cleanNew,
       });
     } catch (e) {
-      // Surface the DB-level error (e.g. email already in use).
       final msg = e.toString();
       if (msg.contains('already in use') || msg.contains('already registered')) {
         throw Exception('That email address is already in use by another account.');
@@ -218,15 +186,14 @@ class AuthService {
       throw Exception('Database update failed: $msg');
     }
 
-    // Step 3 — update the email in Supabase Auth (triggers confirmation email).
+    // Step 3: update the email in Supabase Auth (triggers confirmation email).
     try {
       await _supabase.auth.updateUser(UserAttributes(email: cleanNew));
     } catch (e) {
-      // The DB has already been updated; surface the auth error so user knows
-      // they may need to re-verify.
       throw Exception(
-          'Profile updated but auth email change failed. '
-          'Please contact support. Details: $e');
+        'Profile updated but auth email change failed. '
+        'Please contact support. Details: $e',
+      );
     }
   }
 
