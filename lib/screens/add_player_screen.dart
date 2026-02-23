@@ -4,31 +4,21 @@ import '../models/player.dart';
 import '../services/player_service.dart';
 
 // =============================================================================
-// add_player_screen.dart  (AOD v1.7)
+// add_player_screen.dart  (AOD v1.8)
 //
-// CHANGE (Notes.txt v1.7 — 2-page add-player flow):
+// BUG FIX (Notes.txt — "new player page 1 is not connecting to existing users"):
+//   _lookupEmail() previously searched only the current team's member list.
+//   This meant it could only find athletes who had already been added to this
+//   specific team — not new athletes who have an AOD account on a different
+//   team or who have never been added to any team yet.
 //
-//   PAGE 1 — Athlete Email Lookup
-//     • Asks for the athlete's email.
-//     • On Submit: checks whether an AOD account exists for that email.
-//       If it does, pre-populates Page 2 with first name, last name, and
-//       athlete ID from the linked account.
+//   Fix: _lookupEmail() now calls _playerService.lookupUserByEmail() which
+//   routes through the new `lookup_user_by_email` SECURITY DEFINER RPC.
+//   That RPC can see public.users regardless of RLS, so any registered account
+//   is found by email — not just team members.
 //
-//   PAGE 2 — Athlete Details
-//     • First Name, Last Name (pre-filled if account found; editable)
-//     • Jersey Number (optional)
-//     • Position (optional)
-//     • Nickname (optional)
-//     • Athlete ID (optional; pre-filled if account found)
-//     • Athlete Grade (optional; dropdown 9–12; auto-increments July 1)
-//     • Parent/Guardian Email (optional; triggers guardian link)
-//     Section divider: "Athlete Information (Optional)"
-//
-// CHANGE (v1.7): labels changed from "Student Email / ID" → "Athlete Email / ID"
-// CHANGE (v1.7): new guardianEmail field.
-// CHANGE (v1.7): auto-link + guardian link after save.
-//
-// Edit mode bypasses Page 1 and goes straight to Page 2 pre-filled.
+// All v1.7 behaviours retained (2-page flow, grade dropdown, guardian link,
+//   auto-link after save, deferred controller dispose).
 // =============================================================================
 
 class AddPlayerScreen extends StatefulWidget {
@@ -68,7 +58,7 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
   final _athleteIdController = TextEditingController();
   final _guardianController  = TextEditingController();
 
-  int? _selectedGrade; // nullable — 9, 10, 11, or 12
+  int? _selectedGrade;
 
   bool _isSaving = false;
 
@@ -80,7 +70,6 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
       // Edit mode: skip email lookup, go straight to Page 2 pre-filled.
       _page = 1;
       final p = widget.playerToEdit!;
-      // Pre-fill from existing player row.
       final nameParts = p.name.split(' ');
       _firstNameController.text = nameParts.isNotEmpty ? nameParts.first : '';
       _lastNameController.text  = nameParts.length > 1
@@ -116,13 +105,11 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
   // ==========================================================================
 
   /// Checks whether a public.users account exists for the entered email.
-  /// Uses the `add_member_to_team` RPC indirectly — actually we query the
-  /// team_members / users via a separate lookup method in PlayerService.
   ///
-  /// NOTE: We cannot query public.users directly by email (RLS blocks it).
-  /// Instead we attempt to fetch via the service which calls the DB, and if
-  /// the user is already on the team their data is returned. Otherwise we just
-  /// advance to Page 2 and note "account not found yet".
+  /// BUG FIX (v1.8): Previously searched only the current team's members.
+  /// Now calls the lookup_user_by_email SECURITY DEFINER RPC which can see
+  /// ALL registered users regardless of RLS — so athletes on other teams or
+  /// with no team yet are also found and pre-filled correctly.
   Future<void> _lookupEmail() async {
     if (!_emailFormKey.currentState!.validate()) return;
     setState(() => _isLookingUp = true);
@@ -130,29 +117,30 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
     final email = _emailLookupController.text.trim().toLowerCase();
 
     try {
-      // Check if this email belongs to someone already on the team.
-      final members = await _playerService.getTeamMembers(widget.teamId);
-      final match   = members.where((m) =>
-          m.email.toLowerCase() == email).firstOrNull;
+      // RPC-based lookup — bypasses RLS on public.users.
+      final userRow = await _playerService.lookupUserByEmail(email);
 
-      if (match != null) {
-        // Pre-fill name from the matched team member.
+      if (userRow != null) {
+        // Account found — pre-fill name and athlete ID from the account row.
         setState(() {
-          _accountFound = true;
-          _foundUserId  = match.userId;
-          _firstNameController.text = match.firstName;
-          _lastNameController.text  = match.lastName;
+          _accountFound             = true;
+          _foundUserId              = userRow['id'] as String?;
+          _firstNameController.text = userRow['first_name'] as String? ?? '';
+          _lastNameController.text  = userRow['last_name']  as String? ?? '';
+          _athleteIdController.text = userRow['athlete_id'] as String? ?? '';
           _page = 1;
         });
       } else {
-        // Account may exist but is not yet on the team — advance anyway.
-        // The auto-link step after save will try to link it.
+        // No account found — still advance to Page 2 so the coach can add
+        // the player manually.  Auto-link will be attempted after save if the
+        // athlete registers later.
         setState(() {
           _accountFound = false;
           _page         = 1;
         });
       }
     } catch (_) {
+      // Non-fatal — advance to Page 2 anyway.
       setState(() {
         _accountFound = false;
         _page         = 1;
@@ -306,7 +294,6 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
         leading: _page == 1 && !isEditing
             ? IconButton(
                 icon: const Icon(Icons.arrow_back),
-                // Go back to email lookup if on Page 2 in add mode.
                 onPressed: () => setState(() => _page = 0),
               )
             : null,
@@ -325,7 +312,6 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Progress indicator
             _StepIndicator(current: 1, total: 2),
             const SizedBox(height: 24),
 
@@ -338,7 +324,7 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Enter the athlete\'s email. If they already have an Apex On Deck '
+              "Enter the athlete's email. If they already have an Apex On Deck "
               'account, their information will be pre-filled.',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -382,7 +368,7 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
             ),
             const SizedBox(height: 12),
             OutlinedButton(
-              // Skip email lookup entirely — jump straight to Page 2 blank.
+              // Skip email lookup — jump straight to Page 2 blank.
               onPressed: () => setState(() => _page = 1),
               child: const Text('Skip — Enter Details Manually'),
             ),
@@ -407,7 +393,7 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
             if (!isEditing) _StepIndicator(current: 2, total: 2),
             if (!isEditing) const SizedBox(height: 16),
 
-            // Account found banner
+            // Account found banner.
             if (_accountFound && !isEditing)
               Container(
                 margin: const EdgeInsets.only(bottom: 16),
@@ -536,7 +522,6 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
             const SizedBox(height: 16),
 
             // ── Grade ──────────────────────────────────────────────────────
-            // CHANGE (v1.7): grade dropdown; auto-increments July 1 server-side.
             DropdownButtonFormField<int?>(
               value: _selectedGrade,
               decoration: const InputDecoration(
@@ -557,7 +542,6 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
             const SizedBox(height: 16),
 
             // ── Parent/Guardian Email ──────────────────────────────────────
-            // CHANGE (v1.7): new field. Triggers guardian link if account found.
             TextFormField(
               controller: _guardianController,
               keyboardType: TextInputType.emailAddress,
@@ -569,7 +553,7 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
                 border: OutlineInputBorder(),
                 helperText:
                     'If the guardian has an AOD account, they will be linked '
-                    'and can see this player\'s view',
+                    "and can see this player's view",
               ),
               validator: (v) {
                 if (v != null && v.isNotEmpty && !v.contains('@')) {
@@ -634,7 +618,6 @@ class _StepIndicator extends StatelessWidget {
         return Expanded(
           child: Row(
             children: [
-              // Circle
               Container(
                 width: 28,
                 height: 28,
@@ -655,7 +638,6 @@ class _StepIndicator extends StatelessWidget {
                         ),
                 ),
               ),
-              // Connector line (between steps)
               if (i < total - 1)
                 Expanded(
                   child: Container(

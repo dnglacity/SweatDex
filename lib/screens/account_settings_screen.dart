@@ -5,19 +5,27 @@ import '../services/player_service.dart';
 import 'login_screen.dart';
 
 // =============================================================================
-// account_settings_screen.dart  (AOD v1.7 — NEW)
+// account_settings_screen.dart  (AOD v1.7 — updated)
 //
-// CHANGE (Notes.txt v1.7):
-//   • New screen accessible from the options menu (persistent, always visible).
-//   • Allows the user to edit:
-//       – First Name
-//       – Last Name
-//       – Default Nickname (optional; coaches can override locally on roster)
-//       – Email
-//   • Delete Account option with:
-//       – Confirmation dialog with checkbox
-//       – Blocked if the user is the sole owner of any team (RPC enforces this)
-//       – Friendly error shown with instructions to transfer or delete team first
+// CHANGE (Notes.txt v1.7 — Email Change):
+//   • Email field is now READ-ONLY in the main profile form.
+//   • An "Edit" icon button appears next to the email field at all times.
+//   • Tapping it opens _showEmailChangeDialog(), which:
+//       1. Asks for the current password (hidden, toggleable).
+//       2. Asks for the new email entered TWICE for confirmation.
+//       3. Validates both entries match and the format is valid.
+//       4. Calls authService.changeEmail(), which:
+//            – Re-authenticates to verify the password.
+//            – Calls the `change_user_email` SECURITY DEFINER RPC to cascade
+//              the change across public.users, players.athlete_email, and
+//              players.guardian_email in a single transaction.
+//            – Updates the Supabase Auth email (triggers re-verification).
+//       5. Shows a confirmation snackbar and reloads the profile.
+//
+// All other v1.7 behaviours retained:
+//   – First/Last/Nickname editing
+//   – Delete account with acknowledgement checkbox
+//   – Profile avatar with initial letter
 // =============================================================================
 
 class AccountSettingsScreen extends StatefulWidget {
@@ -28,23 +36,25 @@ class AccountSettingsScreen extends StatefulWidget {
 }
 
 class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
-  final _authService   = AuthService();
+  final _authService = AuthService();
   final _playerService = PlayerService();
 
-  // Profile data loaded from Supabase.
+  // Profile loaded from Supabase.
   AppUser? _user;
   bool _loading = true;
   String? _errorMessage;
 
-  // Editing state.
+  // Editing state for name/nickname fields only.
   bool _isEditing = false;
-  bool _isSaving  = false;
+  bool _isSaving = false;
 
-  final _formKey            = GlobalKey<FormState>();
+  final _formKey = GlobalKey<FormState>();
   final _firstNameController = TextEditingController();
-  final _lastNameController  = TextEditingController();
-  final _nicknameController  = TextEditingController();
-  final _emailController     = TextEditingController();
+  final _lastNameController = TextEditingController();
+  final _nicknameController = TextEditingController();
+  // NOTE: _emailController is display-only. Editing goes through the
+  // _showEmailChangeDialog flow.
+  final _emailController = TextEditingController();
 
   @override
   void initState() {
@@ -65,7 +75,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
 
   Future<void> _loadProfile() async {
     setState(() {
-      _loading      = true;
+      _loading = true;
       _errorMessage = null;
     });
     try {
@@ -74,13 +84,13 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
 
       final user = AppUser.fromMap(profile);
       setState(() {
-        _user     = user;
-        _loading  = false;
+        _user = user;
+        _loading = false;
       });
       _populateControllers(user);
     } catch (e) {
       setState(() {
-        _loading      = false;
+        _loading = false;
         _errorMessage = e.toString();
       });
     }
@@ -88,12 +98,13 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
 
   void _populateControllers(AppUser user) {
     _firstNameController.text = user.firstName;
-    _lastNameController.text  = user.lastName;
-    _nicknameController.text  = user.nickname ?? '';
-    _emailController.text     = user.email;
+    _lastNameController.text = user.lastName;
+    _nicknameController.text = user.nickname ?? '';
+    // Email is read-only; controller is only used for display.
+    _emailController.text = user.email;
   }
 
-  // ── Save profile ──────────────────────────────────────────────────────────
+  // ── Save profile (name/nickname only) ─────────────────────────────────────
 
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
@@ -101,15 +112,13 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
 
     try {
       await _authService.updateProfile(
-        firstName:    _firstNameController.text.trim(),
-        lastName:     _lastNameController.text.trim(),
-        nickname:     _nicknameController.text.trim().isEmpty
-                        ? null
-                        : _nicknameController.text.trim(),
-        email:        _emailController.text.trim(),
+        firstName: _firstNameController.text.trim(),
+        lastName: _lastNameController.text.trim(),
+        nickname: _nicknameController.text.trim().isEmpty
+            ? null
+            : _nicknameController.text.trim(),
       );
 
-      // Reload to show the saved state.
       await _loadProfile();
       setState(() => _isEditing = false);
 
@@ -133,6 +142,267 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
+  }
+
+  // ── Email Change Dialog (Notes.txt — password-gated, double-entry) ─────────
+  //
+  // This dialog:
+  //   1. Requires the current password for verification.
+  //   2. Requires typing the new email TWICE to confirm.
+  //   3. Validates format on both fields.
+  //   4. Calls authService.changeEmail() which re-auths, then cascades the
+  //      change across the DB + Supabase Auth.
+
+  Future<void> _showEmailChangeDialog() async {
+    final passwordController = TextEditingController();
+    final email1Controller = TextEditingController();
+    final email2Controller = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    bool obscurePassword = true;
+    bool isSubmitting = false;
+    String? dialogError;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false, // require explicit cancel
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Change Email'),
+          content: SingleChildScrollView(
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── Informational note ──────────────────────────────────
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text(
+                      'Your email is used to log in. After changing it, '
+                      'you may need to verify the new address before signing '
+                      'in again.\n\nThis will update your email everywhere in '
+                      'the app (player records, guardian links, etc.).',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // ── Current password ────────────────────────────────────
+                  Text(
+                    'Current Password',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[700],
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  TextFormField(
+                    controller: passwordController,
+                    obscureText: obscurePassword,
+                    textInputAction: TextInputAction.next,
+                    decoration: InputDecoration(
+                      hintText: 'Enter your current password',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      border: const OutlineInputBorder(),
+                      // Toggle password visibility.
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          obscurePassword
+                              ? Icons.visibility
+                              : Icons.visibility_off,
+                        ),
+                        onPressed: () =>
+                            setLocal(() => obscurePassword = !obscurePassword),
+                      ),
+                    ),
+                    validator: (v) {
+                      if (v == null || v.isEmpty) {
+                        return 'Please enter your current password';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 20),
+
+                  // ── New email (first entry) ──────────────────────────────
+                  Text(
+                    'New Email Address',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[700],
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  TextFormField(
+                    controller: email1Controller,
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
+                    autocorrect: false,
+                    decoration: const InputDecoration(
+                      hintText: 'new@example.com',
+                      prefixIcon: Icon(Icons.email_outlined),
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) {
+                        return 'Please enter the new email';
+                      }
+                      if (!v.contains('@') || !v.contains('.')) {
+                        return 'Enter a valid email address';
+                      }
+                      final current = _user?.email.toLowerCase().trim() ?? '';
+                      if (v.trim().toLowerCase() == current) {
+                        return 'New email must be different from current email';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  // ── New email (confirmation entry) ───────────────────────
+                  Text(
+                    'Confirm New Email Address',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[700],
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  TextFormField(
+                    controller: email2Controller,
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.done,
+                    autocorrect: false,
+                    decoration: const InputDecoration(
+                      hintText: 'Retype new email to confirm',
+                      prefixIcon: Icon(Icons.email),
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) {
+                        return 'Please confirm the new email';
+                      }
+                      if (v.trim().toLowerCase() !=
+                          email1Controller.text.trim().toLowerCase()) {
+                        return 'Email addresses do not match';
+                      }
+                      return null;
+                    },
+                  ),
+
+                  // ── Inline error from the service call ───────────────────
+                  if (dialogError != null) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red.withOpacity(0.4)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.error_outline,
+                              color: Colors.red, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              dialogError!,
+                              style: const TextStyle(
+                                  color: Colors.red, fontSize: 13),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            // Cancel button — always enabled.
+            TextButton(
+              onPressed: isSubmitting ? null : () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            // Confirm button — disabled while submitting.
+            FilledButton(
+              onPressed: isSubmitting
+                  ? null
+                  : () async {
+                      // Clear previous inline error.
+                      setLocal(() => dialogError = null);
+
+                      if (!formKey.currentState!.validate()) return;
+
+                      setLocal(() => isSubmitting = true);
+
+                      try {
+                        await _authService.changeEmail(
+                          currentPassword: passwordController.text,
+                          newEmail: email1Controller.text.trim(),
+                        );
+
+                        // Close dialog on success.
+                        if (ctx.mounted) Navigator.pop(ctx);
+
+                        // Reload profile to show new email.
+                        await _loadProfile();
+
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Email updated! Check your inbox to verify '
+                                'the new address.',
+                              ),
+                              backgroundColor: Colors.green,
+                              duration: Duration(seconds: 6),
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        // Show the error inline inside the dialog (not a
+                        // snackbar) so the user can correct and retry without
+                        // re-opening the dialog.
+                        setLocal(() {
+                          isSubmitting = false;
+                          dialogError = e
+                              .toString()
+                              .replaceAll('Exception: ', '');
+                        });
+                      }
+                    },
+              child: isSubmitting
+                  ? const SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(
+                          color: Colors.white, strokeWidth: 2),
+                    )
+                  : const Text('Change Email'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    // Deferred disposal — prevents "controller used after dispose" on
+    // the dialog close animation frame (same pattern as other dialogs).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      passwordController.dispose();
+      email1Controller.dispose();
+      email2Controller.dispose();
+    });
   }
 
   // ── Delete account ────────────────────────────────────────────────────────
@@ -181,9 +451,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
               child: const Text('Cancel'),
             ),
             FilledButton(
-              onPressed: acknowledged
-                  ? () => Navigator.pop(ctx, true)
-                  : null,
+              onPressed:
+                  acknowledged ? () => Navigator.pop(ctx, true) : null,
               style: FilledButton.styleFrom(backgroundColor: Colors.red),
               child: const Text('Delete My Account'),
             ),
@@ -195,11 +464,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     if (confirm != true || !mounted) return;
 
     try {
-      // delete_account() RPC blocks if user is sole owner of a team.
       await _authService.deleteAccount();
-
       if (mounted) {
-        // Navigate to login — account is gone.
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const LoginScreen()),
           (route) => false,
@@ -207,14 +473,11 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       }
     } catch (e) {
       if (mounted) {
-        // Show the friendly error from the RPC (e.g. sole owner message).
         showDialog<void>(
           context: context,
           builder: (ctx) => AlertDialog(
             title: const Text('Cannot Delete Account'),
-            content: Text(
-              e.toString().replaceAll('Exception: ', ''),
-            ),
+            content: Text(e.toString().replaceAll('Exception: ', '')),
             actions: [
               FilledButton(
                 onPressed: () => Navigator.pop(ctx),
@@ -232,7 +495,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final cs    = theme.colorScheme;
+    final cs = theme.colorScheme;
 
     return Scaffold(
       appBar: AppBar(
@@ -242,8 +505,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
           if (!_loading && _errorMessage == null && !_isEditing)
             TextButton(
               onPressed: () => setState(() => _isEditing = true),
-              child: const Text('Edit',
-                  style: TextStyle(color: Colors.white)),
+              child:
+                  const Text('Edit', style: TextStyle(color: Colors.white)),
             ),
           if (_isEditing)
             TextButton(
@@ -265,7 +528,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // ── Avatar / greeting ─────────────────────────────────
+                      // ── Avatar / greeting ────────────────────────────────
                       Center(
                         child: CircleAvatar(
                           radius: 40,
@@ -296,8 +559,9 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                           child: Text(
                             '"${_user!.nickname}"',
                             style: theme.textTheme.bodyMedium?.copyWith(
-                                fontStyle: FontStyle.italic,
-                                color: cs.onSurfaceVariant),
+                              fontStyle: FontStyle.italic,
+                              color: cs.onSurfaceVariant,
+                            ),
                           ),
                         ),
                       const SizedBox(height: 32),
@@ -308,6 +572,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
+                            // First Name
                             _buildField(
                               controller: _firstNameController,
                               label: 'First Name',
@@ -319,6 +584,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                                       : null,
                             ),
                             const SizedBox(height: 16),
+
+                            // Last Name
                             _buildField(
                               controller: _lastNameController,
                               label: 'Last Name',
@@ -330,6 +597,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                                       : null,
                             ),
                             const SizedBox(height: 16),
+
+                            // Nickname
                             _buildField(
                               controller: _nicknameController,
                               label: 'Default Nickname (optional)',
@@ -339,21 +608,46 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                                   'Coaches can override this on their roster',
                             ),
                             const SizedBox(height: 16),
-                            _buildField(
-                              controller: _emailController,
-                              label: 'Email',
-                              icon: Icons.email,
-                              enabled: _isEditing,
-                              keyboardType: TextInputType.emailAddress,
-                              validator: (v) {
-                                if (v == null || v.trim().isEmpty) {
-                                  return 'Required';
-                                }
-                                if (!v.contains('@')) {
-                                  return 'Enter a valid email';
-                                }
-                                return null;
-                              },
+
+                            // ── Email — read-only with edit button ──────────
+                            // CHANGE (Notes.txt): email is never editable inline.
+                            // The pencil icon launches the password-gated flow.
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _emailController,
+                                    enabled: false, // always read-only
+                                    keyboardType: TextInputType.emailAddress,
+                                    decoration: InputDecoration(
+                                      labelText: 'Email',
+                                      prefixIcon:
+                                          const Icon(Icons.email),
+                                      border: const OutlineInputBorder(),
+                                      filled: true,
+                                      fillColor:
+                                          Colors.grey.withOpacity(0.05),
+                                      // Lock icon reinforces read-only state.
+                                      suffixIcon: const Icon(
+                                          Icons.lock_outline,
+                                          size: 16,
+                                          color: Colors.grey),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                // Edit button — always visible regardless of
+                                // whether the rest of the form is in edit mode.
+                                Tooltip(
+                                  message: 'Change Email',
+                                  child: IconButton(
+                                    icon: const Icon(Icons.edit,
+                                        color: Colors.blue),
+                                    onPressed: _showEmailChangeDialog,
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),

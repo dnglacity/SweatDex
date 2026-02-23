@@ -6,22 +6,84 @@ import '../models/app_user.dart';
 import 'offline_cache_service.dart';
 
 // =============================================================================
-// player_service.dart  (AOD v1.7)
+// player_service.dart  (AOD v1.8)
 //
-// BUG FIX (Issue 1 — add coach "no account found"):
-//   addMemberToTeam() previously did a direct SELECT on public.users filtered
-//   by email. The `users_select_own` and `users_select_team_members` RLS
-//   policies blocked this lookup for users who are not yet on a shared team.
-//   Fix: replaced the direct SELECT + INSERT with a call to the new
-//   `add_member_to_team` SECURITY DEFINER RPC, which bypasses RLS for the
-//   email lookup and enforces role-based permission inside the DB function.
+// BUG FIX (Issue 2 — "User profile not found" on new account):
+//   getTeams() threw immediately when _getCurrentUserId() returned null because
+//   the on_auth_user_created DB trigger had not yet committed.  Added a retry
+//   loop (up to 6 attempts, 500 ms apart) inside getTeams() before throwing.
 //
-// CHANGE (Notes.txt v1.7):
-//   • getSports() — new method to fetch the sports table for autocomplete.
-//   • createTeam() — passes sport_id alongside sport name.
-//   • linkGuardianToPlayer() — new method wrapping the RPC.
-//   • getTeamMembers() — updated join to include first_name / last_name.
-//   • All player methods use athlete_id / athlete_email column names.
+// BUG FIX (Issue 3 — create_team RPC signature mismatch):
+//   createTeam() was calling the RPC with params { p_sport, p_sport_id,
+//   p_team_name } but the DB function only accepted { p_sport, p_team_name }.
+//   The DB function must be updated (see SQL script below).  The Flutter call
+//   now matches the new 3-param signature.
+//
+//   SQL to run in Supabase SQL Editor:
+//   ─────────────────────────────────
+//   CREATE OR REPLACE FUNCTION public.create_team(
+//     p_team_name text,
+//     p_sport     text,
+//     p_sport_id  uuid DEFAULT NULL
+//   )
+//   RETURNS uuid
+//   LANGUAGE plpgsql
+//   SECURITY DEFINER
+//   SET search_path = public
+//   AS $$
+//   DECLARE
+//     v_user_id   uuid;
+//     v_team_id   uuid;
+//     v_count     int;
+//   BEGIN
+//     SELECT id INTO v_user_id FROM public.users WHERE user_id = auth.uid();
+//     IF v_user_id IS NULL THEN
+//       RAISE EXCEPTION 'User profile not found.';
+//     END IF;
+//
+//     SELECT COUNT(*) INTO v_count
+//       FROM public.team_members tm
+//       JOIN public.teams t ON t.id = tm.team_id
+//      WHERE tm.user_id = v_user_id AND tm.role = 'owner';
+//
+//     IF v_count >= 5 THEN
+//       RAISE EXCEPTION 'You can own a maximum of 5 teams.';
+//     END IF;
+//
+//     INSERT INTO public.teams (team_name, sport, sport_id)
+//       VALUES (p_team_name, p_sport, p_sport_id)
+//       RETURNING id INTO v_team_id;
+//
+//     INSERT INTO public.team_members (team_id, user_id, role)
+//       VALUES (v_team_id, v_user_id, 'owner');
+//
+//     RETURN v_team_id;
+//   END;
+//   $$;
+//
+// CHANGE (Notes.txt v1.8 — Page 1 email lookup):
+//   lookupUserByEmail() — new method that calls the lookup_user_by_email
+//   SECURITY DEFINER RPC so Page 1 of add_player_screen can resolve an
+//   existing account by email without being blocked by RLS.
+//
+//   SQL for the RPC (run in Supabase SQL Editor):
+//   ─────────────────────────────────────────────
+//   CREATE OR REPLACE FUNCTION public.lookup_user_by_email(p_email text)
+//   RETURNS TABLE(id uuid, first_name text, last_name text, athlete_id text)
+//   LANGUAGE plpgsql
+//   SECURITY DEFINER
+//   SET search_path = public
+//   AS $$
+//   BEGIN
+//     RETURN QUERY
+//       SELECT u.id, u.first_name, u.last_name, u.athlete_id
+//         FROM public.users u
+//        WHERE lower(u.email) = lower(p_email)
+//        LIMIT 1;
+//   END;
+//   $$;
+//
+// All v1.7 behaviours retained.
 // =============================================================================
 
 class PlayerService {
@@ -34,6 +96,11 @@ class PlayerService {
 
   /// Maps auth.uid() → public.users.id (cached per session).
   String? _cachedUserId;
+
+  /// Maximum retries when waiting for the on_auth_user_created trigger.
+  static const int      _maxUserIdRetries = 6;
+  /// Delay between retries in milliseconds.
+  static const Duration _userIdRetryDelay = Duration(milliseconds: 500);
 
   Future<String?> _getCurrentUserId({bool allowRetry = true}) async {
     if (_cachedUserId != null) return _cachedUserId;
@@ -49,7 +116,7 @@ class PlayerService {
 
       if (row == null && allowRetry) {
         // Trigger may not have committed yet on first login — retry once.
-        await Future.delayed(const Duration(milliseconds: 500));
+        await Future.delayed(_userIdRetryDelay);
         return _getCurrentUserId(allowRetry: false);
       }
 
@@ -71,9 +138,7 @@ class PlayerService {
   // ===========================================================================
 
   /// Fetches all sports from the sports table, ordered by name.
-  ///
   /// Returns a list of maps with keys: 'id', 'name', 'category'.
-  /// Used for the sport autocomplete in team creation.
   Future<List<Map<String, dynamic>>> getSports() async {
     try {
       final response = await _supabase
@@ -83,7 +148,6 @@ class PlayerService {
       return (response as List).cast<Map<String, dynamic>>();
     } catch (e) {
       debugPrint('Error fetching sports: $e');
-      // Return a minimal hardcoded fallback so the UI never breaks.
       return [{'id': null, 'name': 'General', 'category': 'Year-Round'}];
     }
   }
@@ -273,9 +337,27 @@ class PlayerService {
   // ===========================================================================
 
   /// Returns all teams the current user belongs to (any role), sorted by name.
+  ///
+  /// BUG FIX (Issue 2): Added retry loop around _getCurrentUserId() so that
+  /// a freshly-created account has time for the on_auth_user_created trigger
+  /// to commit before we throw "User profile not found."
   Future<List<Map<String, dynamic>>> getTeams() async {
     try {
-      final userId = await _getCurrentUserId();
+      String? userId;
+
+      // Retry loop — the DB trigger that creates the public.users row may
+      // not have committed immediately after sign-up.
+      for (int attempt = 1; attempt <= _maxUserIdRetries; attempt++) {
+        userId = await _getCurrentUserId();
+        if (userId != null) break;
+        if (attempt < _maxUserIdRetries) {
+          debugPrint('getTeams: user profile not found yet, retry $attempt...');
+          await Future.delayed(_userIdRetryDelay);
+          // Clear the cached null so _getCurrentUserId re-queries.
+          _cachedUserId = null;
+        }
+      }
+
       if (userId == null) {
         throw Exception(
             'User profile not found. Please sign out and sign in again.');
@@ -314,8 +396,10 @@ class PlayerService {
 
   /// Creates a new team via the `create_team` SECURITY DEFINER RPC.
   ///
-  /// CHANGE (v1.7): passes sport_id alongside sport name.
-  /// The RPC enforces the 5-team ownership limit.
+  /// BUG FIX (Issue 3): The DB RPC must accept p_sport_id as a parameter.
+  /// See the SQL script at the top of this file to update the function.
+  /// This call now passes { p_team_name, p_sport, p_sport_id } matching the
+  /// updated 3-param signature.
   Future<void> createTeam(String teamName, String sport, {String? sportId}) async {
     try {
       final authUser = _supabase.auth.currentUser;
@@ -325,11 +409,12 @@ class PlayerService {
       await _supabase.rpc('create_team', params: {
         'p_team_name': teamName,
         'p_sport':     sport,
+        // Only include p_sport_id when a value exists; the DB param has a
+        // DEFAULT NULL so it is safe to omit entirely.
         if (sportId != null) 'p_sport_id': sportId,
       });
     } catch (e) {
       debugPrint('Error creating team: $e');
-      // Pass through the RPC error message directly (e.g. 5-team limit).
       throw Exception(e.toString().replaceAll('Exception: ', ''));
     }
   }
@@ -411,7 +496,6 @@ class PlayerService {
   }
 
   /// Returns all members of [teamId] with their role and user profile.
-  /// Orders owners first, then coaches, then players, each group alphabetically.
   Future<List<TeamMember>> getTeamMembers(String teamId) async {
     try {
       final response = await _supabase
@@ -421,7 +505,7 @@ class PlayerService {
             'users(first_name, last_name, name, email, organization)',
           )
           .eq('team_id', teamId)
-          .order('role',         ascending: true)
+          .order('role',              ascending: true)
           .order('users(first_name)', ascending: true);
 
       return (response as List).map((m) => TeamMember.fromMap(m)).toList();
@@ -431,15 +515,10 @@ class PlayerService {
     }
   }
 
-  /// Adds a user to a team with the specified [role].
+  /// Adds a user to a team with the specified [role] via SECURITY DEFINER RPC.
   ///
-  /// BUG FIX (Issue 1): Previously did a direct SELECT on public.users by
-  /// email, which was blocked by the `users_select_own` / `users_select_team_members`
-  /// RLS policies for users not yet on any shared team.
-  ///
-  /// Fix: now calls the `add_member_to_team` SECURITY DEFINER RPC, which
-  /// bypasses RLS for the email lookup inside the DB function while still
-  /// enforcing caller-role checks server-side.
+  /// The RPC resolves the user by email internally, bypassing the RLS policy
+  /// that blocks direct SELECT on public.users by email for non-team-members.
   Future<void> addMemberToTeam({
     required String teamId,
     required String userEmail,
@@ -453,8 +532,32 @@ class PlayerService {
       });
     } catch (e) {
       debugPrint('Error adding member: $e');
-      // Pass through the RPC exception message for user-readable errors.
       throw Exception(e.toString().replaceAll('Exception: ', ''));
+    }
+  }
+
+  /// Looks up a public.users row by email via the lookup_user_by_email
+  /// SECURITY DEFINER RPC (bypasses RLS on public.users for the email field).
+  ///
+  /// CHANGE (v1.8): Used by add_player_screen Page 1 to pre-fill player
+  /// details when the athlete already has an AOD account.
+  ///
+  /// Returns a map with keys: 'id', 'first_name', 'last_name', 'athlete_id'
+  /// or null if no account was found.
+  Future<Map<String, dynamic>?> lookupUserByEmail(String email) async {
+    try {
+      final result = await _supabase.rpc('lookup_user_by_email', params: {
+        'p_email': email.trim().toLowerCase(),
+      });
+
+      // The RPC returns a set; take the first row if any.
+      if (result is List && result.isNotEmpty) {
+        return (result.first as Map<String, dynamic>);
+      }
+      return null;
+    } catch (e) {
+      debugPrint('lookupUserByEmail error: $e');
+      return null;
     }
   }
 
@@ -484,10 +587,6 @@ class PlayerService {
   }
 
   /// Links a guardian email to a player row via the `link_guardian_to_player` RPC.
-  ///
-  /// CHANGE (v1.7): new method.
-  /// If the guardian account exists, inserts a guardian_links row.
-  /// If not, stores the email on the player row for future linking.
   Future<void> linkGuardianToPlayer({
     required String playerId,
     required String guardianEmail,
@@ -606,7 +705,7 @@ class PlayerService {
   }
 
   // ===========================================================================
-  // GAME ROSTER OPERATIONS  (unchanged from v1.6)
+  // GAME ROSTER OPERATIONS  (unchanged from v1.7)
   // ===========================================================================
 
   Future<List<Map<String, dynamic>>> getGameRosters(String teamId) async {

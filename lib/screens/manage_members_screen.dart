@@ -1,24 +1,36 @@
 import 'package:flutter/material.dart';
 import '../models/app_user.dart';
 import '../services/player_service.dart';
-import 'account_settings_screen.dart'; // CHANGE (v1.7)
+import 'account_settings_screen.dart';
 
 // =============================================================================
-// manage_members_screen.dart  (AOD v1.7)
+// manage_members_screen.dart  (AOD v1.8)
 //
-// BUG FIX (Issue 1 — add coach "no account found"):
-//   _showAddMemberDialog() now calls playerService.addMemberToTeam() which
-//   routes through the `add_member_to_team` SECURITY DEFINER RPC.
-//   The direct SELECT on public.users by email is gone — that was blocked by
-//   RLS for users not on a shared team, causing the false "no account found".
+// BUG FIX (Issue 1 / 1.2 / 1.3 — TextEditingController used after dispose):
+//   _showAddMemberDialog() created emailController locally, then called
+//   emailController.dispose() synchronously right after showDialog() returned.
+//   Flutter's closing animation still held a reference to the TextFormField
+//   on the very next frame, causing the "used after being disposed" assertion.
 //
-// CHANGE (Notes.txt v1.7):
-//   • Role options expanded: 'coach' | 'player' | 'team_parent' | 'team_manager'
-//   • New role icons and colors for team_parent and team_manager.
-//   • Account Settings button added to the overflow FAB menu (persistent).
+//   Fix: moved emailController.dispose() into a
+//   WidgetsBinding.instance.addPostFrameCallback so it is deferred to the
+//   frame AFTER the dialog's exit animation completes — consistent with the
+//   pattern already used in saved_roster_screen.dart and team_selection_screen.dart.
 //
-// All v1.6 behaviours retained (transfer ownership, remove, change role,
-//   link player, role banner, BUG FIX Bug 8).
+//   The same deferred-dispose pattern is now applied to _showLinkPlayerDialog()
+//   for the same reason.
+//
+// BUG FIX (Issue 1.2 — FK violation team_members_user_id_fkey):
+//   The RPC add_member_to_team resolves the public.users.id from the email
+//   internally.  The Flutter side must NOT attempt to resolve or pass a raw
+//   auth.uid — it passes only the email and role, which is already the case.
+//   No Flutter code change required beyond the dispose fix above.
+//
+// CHANGE (Notes.txt v1.8 — email change flow):
+//   This screen now opens AccountSettingsScreen which handles the full
+//   password-gated email change flow (see account_settings_screen.dart).
+//
+// All v1.7 behaviours retained.
 // =============================================================================
 
 class ManageMembersScreen extends StatefulWidget {
@@ -76,10 +88,11 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
   // ── Add member dialog ─────────────────────────────────────────────────────
 
   Future<void> _showAddMemberDialog() async {
+    // Controller is created locally here; must be disposed only after the
+    // dialog's exit animation is fully complete (see BUG FIX above).
     final emailController = TextEditingController();
     final formKey         = GlobalKey<FormState>();
 
-    // Owners can pick any non-owner role; coaches can only add coaches.
     String selectedRole = 'coach';
 
     final result = await showDialog<bool>(
@@ -96,9 +109,7 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
                 Text(
                   'The person must already have an Apex On Deck account.',
                   style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(ctx)
-                            .colorScheme
-                            .onSurfaceVariant,
+                        color: Theme.of(ctx).colorScheme.onSurfaceVariant,
                       ),
                 ),
                 const SizedBox(height: 16),
@@ -124,7 +135,7 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                // CHANGE (v1.7): Role selector — owners get all 4 non-owner roles.
+                // Role selector — owners get all 4 non-owner roles.
                 if (_isOwner)
                   DropdownButtonFormField<String>(
                     value: selectedRole,
@@ -134,18 +145,10 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
                       border: OutlineInputBorder(),
                     ),
                     items: const [
-                      DropdownMenuItem(
-                          value: 'coach',
-                          child: Text('Coach')),
-                      DropdownMenuItem(
-                          value: 'player',
-                          child: Text('Player')),
-                      DropdownMenuItem(
-                          value: 'team_parent',
-                          child: Text('Team Parent')),
-                      DropdownMenuItem(
-                          value: 'team_manager',
-                          child: Text('Team Manager')),
+                      DropdownMenuItem(value: 'coach',        child: Text('Coach')),
+                      DropdownMenuItem(value: 'player',       child: Text('Player')),
+                      DropdownMenuItem(value: 'team_parent',  child: Text('Team Parent')),
+                      DropdownMenuItem(value: 'team_manager', child: Text('Team Manager')),
                     ],
                     onChanged: (v) => setLocal(() => selectedRole = v!),
                   )
@@ -173,15 +176,19 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
       ),
     );
 
-    // Safe dispose after dialog animations complete.
+    // BUG FIX (Issue 1): Capture text BEFORE deferring dispose.
+    // Reading .text after dispose() would throw; capture it now while the
+    // controller is still alive.
     final email = emailController.text.trim();
-    emailController.dispose();
+
+    // Defer dispose to the next frame so Flutter's dialog closing animation
+    // can finish detaching the TextFormField from the controller first.
+    WidgetsBinding.instance.addPostFrameCallback((_) => emailController.dispose());
 
     if (result == true && mounted) {
       try {
-        // BUG FIX (Issue 1): addMemberToTeam() now uses the
-        // add_member_to_team SECURITY DEFINER RPC, bypassing the RLS policy
-        // that blocked email lookups for users not on a shared team.
+        // Calls the add_member_to_team SECURITY DEFINER RPC which resolves
+        // the user by email inside the DB, bypassing RLS on public.users.
         await _playerService.addMemberToTeam(
           teamId:    widget.teamId,
           userEmail: email,
@@ -229,13 +236,13 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
     if (players.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('No players on this team to link.')),
+          const SnackBar(content: Text('No players on this team to link.')),
         );
       }
       return;
     }
 
+    // BUG FIX: create controller here so we can defer its dispose.
     final emailController   = TextEditingController();
     final formKey           = GlobalKey<FormState>();
     String? selectedPlayerId;
@@ -320,8 +327,9 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
       ),
     );
 
+    // Capture text before deferring dispose (same pattern as above).
     final email = emailController.text.trim();
-    emailController.dispose();
+    WidgetsBinding.instance.addPostFrameCallback((_) => emailController.dispose());
 
     if (result == true && selectedPlayerId != null && mounted) {
       try {
@@ -387,7 +395,7 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
         if (!mounted) return;
 
         if (isSelf) {
-          // BUG FIX (Bug 8 — retained): Pop to root.
+          // BUG FIX (Bug 8 — retained): Pop to root when user leaves own team.
           Navigator.of(context).popUntil((route) => route.isFirst);
           return;
         }
@@ -412,7 +420,6 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
   // ── Change role dialog ────────────────────────────────────────────────────
 
   Future<void> _showChangeRoleDialog(TeamMember member) async {
-    // All assignable roles (excluding 'owner' — use transfer for that).
     const roles = ['coach', 'player', 'team_parent', 'team_manager'];
     String selected = roles.contains(member.role) ? member.role : 'coach';
 
@@ -689,7 +696,7 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
                   _showLinkPlayerDialog();
                 },
               ),
-            // CHANGE (v1.7): Account Settings always accessible.
+            // Account Settings always accessible.
             ListTile(
               leading: const Icon(Icons.manage_accounts),
               title: const Text('Account Settings'),

@@ -2,3 +2,11 @@ add a join team option in the team selection screen. users will input a code fro
 create these roles: player, assistant coach, team manager, parents, Parent lead
 Coaches can generate a random 7 character code, each for a specific role to prevent assigning incorrect roles.
 
+SportAutocompleteField — pre-fetch once at app startup — getSports() is currently called every time a dialog opens in roster_screen.dart. Lift it to app state (e.g., a Provider) and load it once on login.
+
+guardian_links table — currently linkGuardianToPlayer() exists but the guardian_links_select RLS policy lets guardians see their linked player rows. A future "Guardian View" screen (similar to PlayerSelfViewScreen) could give parents a read-only view of their athlete's status across teams.
+
+Index on players.athlete_email and players.guardian_email — the new change_user_email RPC does full-table scans on both columns. Add indexes:
+CREATE INDEX IF NOT EXISTS idx_players_athlete_email  ON public.players (lower(athlete_email));
+CREATE INDEX IF NOT EXISTS idx_players_guardian_email ON public.players (lower(guardian_email));
+

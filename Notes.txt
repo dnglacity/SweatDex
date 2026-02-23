@@ -1,20 +1,6 @@
 AOD v1.7
 Review supabase_blueprint.json and supabase_policies.json.
 
-In user account settings, block user from changing email. Place an edit button next to the email field and require password to access.
-Ask user to input new email twice for verification.
-When changed, change all instances of the old email throughout the entire database.
-
-
-
-
-
-In team creation or when editing team, let the user type out more than one character in the sport field. On the browser, it will only take my last character input and will not work when attempting to type out a sport name.
-
-new player page 1 is not connecting to existing users.
-
-
-
 
 
 Identify and execute optimization and performance edits.
