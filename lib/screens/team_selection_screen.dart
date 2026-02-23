@@ -4,22 +4,25 @@ import '../services/auth_service.dart';
 import 'roster_screen.dart';
 import 'login_screen.dart';
 import 'player_self_view_screen.dart';
+import 'account_settings_screen.dart'; // CHANGE (v1.7)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// team_selection_screen.dart  (AOD v1.5)
+// =============================================================================
+// team_selection_screen.dart  (AOD v1.7)
 //
-// CHANGE (Notes.txt v1.5 — Unified users):
-//   • _loadAllTeams() replaced with a single getTeams() call.
-//     There is no longer a separate getPlayerLinkedTeams() method — all team
-//     memberships come from the `team_members` table via one query.
-//   • Role-aware routing: 'player' → PlayerSelfViewScreen;
-//     'coach'/'owner' → RosterScreen (with the role passed in).
-//   • Team card badges show 'OWNER', 'COACH', or 'PLAYER'.
-//   • Owner-only actions (Edit Team, Delete Team) are hidden for coaches/players.
+// CHANGE (Notes.txt v1.7):
+//   • Persistent "Account Settings" item in the overflow (⋮) menu. Always
+//     visible, opens AccountSettingsScreen.
+//   • Sport field in team creation/edit now uses a typeahead autocomplete
+//     powered by the `sports` table. Suggestions shown on tap/type; selecting
+//     one captures both the display name and sport_id.
+//   • createTeam() passes sport_id to the updated RPC which also enforces
+//     the 5-team ownership limit (error surfaced to user).
+//   • Edit Team is available in the overflow menu within RosterScreen AND here
+//     on the team card. (No change to the card menu — already present.)
 //
-// BUG FIX (Issue 1 — retained): Deferred TextEditingController dispose.
-// BUG FIX (Bug 1 — retained): Local `submitted` guard prevents double-submit.
-// ─────────────────────────────────────────────────────────────────────────────
+// Retained from v1.6: single getTeams() call, role-aware routing, badges,
+//   BUG FIX (Issue 1) deferred dispose, BUG FIX (Bug 1) double-submit guard.
+// =============================================================================
 
 class TeamSelectionScreen extends StatefulWidget {
   const TeamSelectionScreen({super.key});
@@ -30,21 +33,33 @@ class TeamSelectionScreen extends StatefulWidget {
 
 class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
   final _playerService = PlayerService();
-  final _authService = AuthService();
+  final _authService   = AuthService();
 
   late Future<List<Map<String, dynamic>>> _teamsFuture;
+
+  /// Cached sports list for autocomplete (loaded once).
+  List<Map<String, dynamic>> _sports = [];
 
   @override
   void initState() {
     super.initState();
     _refreshTeams();
+    _loadSports();
   }
 
   void _refreshTeams() {
     setState(() {
-      // CHANGE (v1.5): Single call covers all roles (owner/coach/player).
       _teamsFuture = _playerService.getTeams();
     });
+  }
+
+  Future<void> _loadSports() async {
+    try {
+      final sports = await _playerService.getSports();
+      if (mounted) setState(() => _sports = sports);
+    } catch (_) {
+      // Non-fatal — manual text entry still works.
+    }
   }
 
   // ── Logout ────────────────────────────────────────────────────────────────
@@ -72,9 +87,8 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
     if (confirm != true || !mounted) return;
 
     try {
-      _playerService.clearCache(); // CHANGE (v1.5): clear cached user ID
+      _playerService.clearCache();
       await _authService.signOut();
-
       if (mounted) {
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const LoginScreen()),
@@ -84,84 +98,91 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error logging out: $e'),
+          SnackBar(
+              content: Text('Error logging out: $e'),
               backgroundColor: Colors.red),
         );
       }
     }
   }
 
-  // ── Edit team (owner only) ────────────────────────────────────────────────
+  // ── Edit team ─────────────────────────────────────────────────────────────
 
   Future<void> _showEditTeamDialog(Map<String, dynamic> team) async {
+    // Controllers for the edit form fields.
     final nameController = TextEditingController(text: team['team_name']);
-    final sportController =
-        TextEditingController(text: team['sport'] ?? 'General');
-    final formKey = GlobalKey<FormState>();
-    bool submitted = false; // BUG FIX (Bug 1)
+
+    // Track the selected sport's name and id separately.
+    String selectedSportName = team['sport'] as String? ?? 'General';
+    String? selectedSportId  = team['sport_id'] as String?;
+    final sportSearchController =
+        TextEditingController(text: selectedSportName);
+
+    final formKey    = GlobalKey<FormState>();
+    bool submitted   = false;
 
     final result = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Edit Team'),
-        content: Form(
-          key: formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextFormField(
-                controller: nameController,
-                autofocus: true,
-                textInputAction: TextInputAction.next,
-                onFieldSubmitted: (_) => FocusScope.of(ctx).nextFocus(),
-                decoration: const InputDecoration(
-                  labelText: 'Team Name',
-                  border: OutlineInputBorder(),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Edit Team'),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: nameController,
+                  autofocus: true,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(
+                    labelText: 'Team Name',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (v) => (v == null || v.trim().isEmpty)
+                      ? 'Please enter a team name'
+                      : null,
                 ),
-                validator: (v) => (v == null || v.trim().isEmpty)
-                    ? 'Please enter a team name'
-                    : null,
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: sportController,
-                textInputAction: TextInputAction.done,
-                onFieldSubmitted: (_) {
-                  if (!submitted && formKey.currentState!.validate()) {
-                    submitted = true;
-                    Navigator.pop(ctx, true);
-                  }
-                },
-                decoration: const InputDecoration(
-                  labelText: 'Sport',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 16),
+
+                // CHANGE (v1.7): sport autocomplete
+                _SportAutocompleteField(
+                  controller: sportSearchController,
+                  sports: _sports,
+                  initialSportId: selectedSportId,
+                  onSelected: (name, id) {
+                    setLocal(() {
+                      selectedSportName = name;
+                      selectedSportId   = id;
+                    });
+                  },
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (!submitted && formKey.currentState!.validate()) {
+                  submitted = true;
+                  Navigator.pop(ctx, true);
+                }
+              },
+              child: const Text('Save'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (!submitted && formKey.currentState!.validate()) {
-                submitted = true;
-                Navigator.pop(ctx, true);
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
       ),
     );
 
-    // BUG FIX (Issue 1): Deferred disposal.
+    // Deferred disposal to avoid "used after dispose" after dialog close animation.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       nameController.dispose();
-      sportController.dispose();
+      sportSearchController.dispose();
     });
 
     if (result == true && mounted) {
@@ -169,7 +190,8 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
         await _playerService.updateTeam(
           team['id'] as String,
           nameController.text.trim(),
-          sportController.text.trim(),
+          selectedSportName,
+          sportId: selectedSportId,
         );
         _refreshTeams();
         if (mounted) {
@@ -185,7 +207,7 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
     }
   }
 
-  // ── Delete team (owner only) ──────────────────────────────────────────────
+  // ── Delete team ────────────────────────────────────────────────────────────
 
   Future<void> _showDeleteTeamDialog(Map<String, dynamic> team) async {
     final confirm = await showDialog<bool>(
@@ -194,7 +216,8 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
         title: const Text('Delete Team'),
         content: Text(
           'Delete "${team['team_name']}"?\n\n'
-          'All players will also be deleted. This cannot be undone.',
+          'All players will also be deleted. This cannot be undone.\n\n'
+          'Note: All coaches must be removed before the team can be deleted.',
         ),
         actions: [
           TextButton(
@@ -223,7 +246,8 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-                content: Text('Error: $e'), backgroundColor: Colors.red),
+                content: Text(e.toString().replaceAll('Exception: ', '')),
+                backgroundColor: Colors.red),
           );
         }
       }
@@ -247,9 +271,28 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert),
             onSelected: (v) async {
-              if (v == 'logout') await _handleLogout();
+              if (v == 'accountSettings') {
+                // CHANGE (v1.7): persistent account settings
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const AccountSettingsScreen()),
+                );
+              } else if (v == 'logout') {
+                await _handleLogout();
+              }
             },
             itemBuilder: (_) => const [
+              // CHANGE (v1.7): Account Settings always visible at top.
+              PopupMenuItem(
+                value: 'accountSettings',
+                child: Row(children: [
+                  Icon(Icons.manage_accounts, size: 20),
+                  SizedBox(width: 12),
+                  Text('Account Settings'),
+                ]),
+              ),
+              PopupMenuDivider(),
               PopupMenuItem(
                 value: 'logout',
                 child: Row(children: [
@@ -274,7 +317,8 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                  const Icon(Icons.error_outline,
+                      size: 48, color: Colors.red),
                   const SizedBox(height: 16),
                   Text('Error: ${snapshot.error}'),
                   const SizedBox(height: 16),
@@ -295,13 +339,14 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.sports, size: 64, color: colorScheme.secondary),
+                  Icon(Icons.sports,
+                      size: 64, color: colorScheme.secondary),
                   const SizedBox(height: 16),
                   const Text('No teams yet',
-                      style:
-                          TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                      style: TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
-                  Text('Tap the button below to create your first team!',
+                  Text('Tap the + button below to create your first team!',
                       style: TextStyle(color: Colors.grey[600])),
                 ],
               ),
@@ -314,8 +359,8 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
               itemCount: teams.length,
               padding: const EdgeInsets.all(16),
               itemBuilder: (ctx, i) {
-                final team = teams[i];
-                final role = team['role'] as String;
+                final team    = teams[i];
+                final role    = team['role'] as String;
                 final isOwner = role == 'owner';
                 final isPlayer = role == 'player';
 
@@ -347,18 +392,17 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
                         Flexible(
                           child: Text(
                             team['team_name'] as String? ?? 'Unnamed Team',
-                            style:
-                                const TextStyle(fontWeight: FontWeight.bold),
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         const SizedBox(width: 8),
-                        // CHANGE (v1.5): Role badge replaces old is_owner/is_player flags.
                         _roleBadge(role, colorScheme),
                       ],
                     ),
-                    subtitle: Text(team['sport'] as String? ?? 'General'),
-                    // CHANGE (v1.5): Owner gets edit/delete options; others do not.
+                    subtitle:
+                        Text(team['sport'] as String? ?? 'General'),
                     trailing: isPlayer
                         ? null
                         : PopupMenuButton<String>(
@@ -370,9 +414,10 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
                                   MaterialPageRoute(
                                     builder: (_) => RosterScreen(
                                       teamId: team['id'] as String,
-                                      teamName: team['team_name'] as String,
+                                      teamName:
+                                          team['team_name'] as String,
                                       sport: team['sport'] as String?,
-                                      currentUserRole: role, // CHANGE (v1.5)
+                                      currentUserRole: role,
                                     ),
                                   ),
                                 );
@@ -392,7 +437,6 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
                                   Text('Open Roster'),
                                 ]),
                               ),
-                              // Only owners see Edit and Delete.
                               if (isOwner) ...[
                                 const PopupMenuItem(
                                   value: 'edit',
@@ -409,7 +453,8 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
                                         color: Colors.red, size: 20),
                                     SizedBox(width: 12),
                                     Text('Delete Team',
-                                        style: TextStyle(color: Colors.red)),
+                                        style:
+                                            TextStyle(color: Colors.red)),
                                   ]),
                                 ),
                               ],
@@ -417,26 +462,24 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
                           ),
                     onTap: () async {
                       if (isPlayer) {
-                        // Players see their own read-only view.
                         await Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (_) => PlayerSelfViewScreen(
-                              teamId: team['id'] as String,
+                              teamId:   team['id']       as String,
                               teamName: team['team_name'] as String,
                             ),
                           ),
                         );
                       } else {
-                        // Coaches and owners see the full roster management screen.
                         await Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (_) => RosterScreen(
-                              teamId: team['id'] as String,
-                              teamName: team['team_name'] as String,
-                              sport: team['sport'] as String?,
-                              currentUserRole: role, // CHANGE (v1.5)
+                              teamId:          team['id']       as String,
+                              teamName:        team['team_name'] as String,
+                              sport:           team['sport']    as String?,
+                              currentUserRole: role,
                             ),
                           ),
                         );
@@ -450,9 +493,6 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
           );
         },
       ),
-      // Only non-players can create new teams from this screen.
-      // [Inference] Players won't typically create teams, but the button is not
-      // hidden to allow a player-role user to also create and own a new team.
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _showCreateTeamDialog,
         icon: const Icon(Icons.add),
@@ -461,120 +501,221 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
     );
   }
 
-  // ── Role badge widget ─────────────────────────────────────────────────────
+  // ── Role badge widget ──────────────────────────────────────────────────────
 
   Widget _roleBadge(String role, ColorScheme cs) {
     switch (role) {
       case 'owner':
-        return _Badge('OWNER', const Color(0xFF5C4A00), const Color(0xFFFFF3CD));
+        return _Badge('OWNER', const Color(0xFF5C4A00),
+            const Color(0xFFFFF3CD));
       case 'coach':
         return _Badge('COACH', Colors.blue[900]!, Colors.blue[100]!);
       case 'player':
         return _Badge('PLAYER', cs.primary, cs.primaryContainer);
+      case 'team_parent':
+        return _Badge('PARENT', Colors.green[900]!, Colors.green[100]!);
+      case 'team_manager':
+        return _Badge('MANAGER', Colors.purple[900]!, Colors.purple[100]!);
       default:
-        return _Badge(role.toUpperCase(), Colors.grey[800]!, Colors.grey[200]!);
+        return _Badge(role.toUpperCase(), Colors.grey[800]!,
+            Colors.grey[200]!);
     }
   }
 
-  // ── Create team dialog ────────────────────────────────────────────────────
+  // ── Create team dialog ─────────────────────────────────────────────────────
 
   Future<void> _showCreateTeamDialog() async {
-    final nameController = TextEditingController();
-    final sportController = TextEditingController(text: 'General');
+    final nameController         = TextEditingController();
+    final sportSearchController  = TextEditingController(text: 'General');
+    String selectedSportName     = 'General';
+    String? selectedSportId;
     final formKey = GlobalKey<FormState>();
-    bool submitted = false; // BUG FIX (Bug 1)
+    bool submitted = false;
 
     final result = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('New Team'),
-        content: Form(
-          key: formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextFormField(
-                controller: nameController,
-                autofocus: true,
-                textInputAction: TextInputAction.next,
-                onFieldSubmitted: (_) => FocusScope.of(ctx).nextFocus(),
-                decoration: const InputDecoration(
-                  labelText: 'Team Name',
-                  hintText: 'e.g. Tigers',
-                  border: OutlineInputBorder(),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('New Team'),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: nameController,
+                  autofocus: true,
+                  textInputAction: TextInputAction.next,
+                  onFieldSubmitted: (_) => FocusScope.of(ctx).nextFocus(),
+                  decoration: const InputDecoration(
+                    labelText: 'Team Name',
+                    hintText: 'e.g. Tigers',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (v) => (v == null || v.trim().isEmpty)
+                      ? 'Please enter a team name'
+                      : null,
                 ),
-                validator: (v) => (v == null || v.trim().isEmpty)
-                    ? 'Please enter a team name'
-                    : null,
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: sportController,
-                textInputAction: TextInputAction.done,
-                onFieldSubmitted: (_) {
-                  if (!submitted && formKey.currentState!.validate()) {
-                    submitted = true;
-                    Navigator.pop(ctx, true);
-                  }
-                },
-                decoration: const InputDecoration(
-                  labelText: 'Sport',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 16),
+
+                // CHANGE (v1.7): sport autocomplete.
+                _SportAutocompleteField(
+                  controller: sportSearchController,
+                  sports: _sports,
+                  onSelected: (name, id) {
+                    setLocal(() {
+                      selectedSportName = name;
+                      selectedSportId   = id;
+                    });
+                  },
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (!submitted && formKey.currentState!.validate()) {
+                  submitted = true;
+                  Navigator.pop(ctx, true);
+                }
+              },
+              child: const Text('Create'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (!submitted && formKey.currentState!.validate()) {
-                submitted = true;
-                Navigator.pop(ctx, true);
-              }
-            },
-            child: const Text('Create'),
-          ),
-        ],
       ),
     );
 
-    // BUG FIX (Issue 1): Deferred disposal.
+    // Deferred disposal — Bug Fix (Issue 1) pattern.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       nameController.dispose();
-      sportController.dispose();
+      sportSearchController.dispose();
     });
 
     if (result == true && mounted) {
       try {
         await _playerService.createTeam(
           nameController.text.trim(),
-          sportController.text.trim(),
+          selectedSportName,
+          sportId: selectedSportId,
         );
         _refreshTeams();
         if (mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(const SnackBar(content: Text('Team created!')));
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Team created!')));
         }
       } catch (e) {
+        // Surface RPC errors (e.g. 5-team limit exceeded) directly.
         if (mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('Error creating team: $e')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(e.toString().replaceAll('Exception: ', '')),
+              backgroundColor: Colors.red,
+            ),
+          );
         }
       }
     }
   }
 }
 
+// =============================================================================
+// _SportAutocompleteField
+//
+// CHANGE (v1.7): Displays a searchable sport autocomplete.
+// Tapping opens a filtered list of sports from the DB.
+// Selecting one fills the text field and captures the sport_id.
+// Typing a custom value (not in the list) is also allowed (sport_id = null).
+// =============================================================================
+
+class _SportAutocompleteField extends StatelessWidget {
+  final TextEditingController controller;
+  final List<Map<String, dynamic>> sports;
+  final String? initialSportId;
+  final void Function(String name, String? id) onSelected;
+
+  const _SportAutocompleteField({
+    required this.controller,
+    required this.sports,
+    this.initialSportId,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Autocomplete<Map<String, dynamic>>(
+      initialValue: TextEditingValue(text: controller.text),
+      optionsBuilder: (TextEditingValue textEditingValue) {
+        final query = textEditingValue.text.toLowerCase();
+        if (query.isEmpty) return sports;
+        return sports.where(
+          (s) => (s['name'] as String).toLowerCase().contains(query),
+        );
+      },
+      displayStringForOption: (s) => s['name'] as String,
+      fieldViewBuilder: (context, textController, focusNode, onSubmitted) {
+        // Keep our external controller in sync.
+        textController.text = controller.text;
+        return TextFormField(
+          controller: textController,
+          focusNode: focusNode,
+          decoration: const InputDecoration(
+            labelText: 'Sport',
+            hintText: 'e.g., Basketball (Boys)',
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.sports),
+          ),
+          onChanged: (v) {
+            controller.text = v;
+            // If the user types a value not in the list, clear the sport_id.
+            onSelected(v, null);
+          },
+          onFieldSubmitted: (_) => onSubmitted(),
+        );
+      },
+      optionsViewBuilder: (context, onOptionSelected, options) {
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 4,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 200),
+              child: ListView.builder(
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
+                itemCount: options.length,
+                itemBuilder: (_, i) {
+                  final sport = options.elementAt(i);
+                  return ListTile(
+                    title: Text(sport['name'] as String),
+                    subtitle: Text(sport['category'] as String? ?? ''),
+                    onTap: () => onOptionSelected(sport),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
+      onSelected: (sport) {
+        controller.text = sport['name'] as String;
+        onSelected(sport['name'] as String, sport['id'] as String?);
+      },
+    );
+  }
+}
+
 // ── Badge widget ──────────────────────────────────────────────────────────────
+
 class _Badge extends StatelessWidget {
   final String label;
-  final Color textColor;
-  final Color bgColor;
+  final Color  textColor;
+  final Color  bgColor;
 
   const _Badge(this.label, this.textColor, this.bgColor);
 

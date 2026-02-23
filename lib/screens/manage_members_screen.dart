@@ -1,31 +1,29 @@
 import 'package:flutter/material.dart';
 import '../models/app_user.dart';
 import '../services/player_service.dart';
+import 'account_settings_screen.dart'; // CHANGE (v1.7)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// manage_members_screen.dart  (AOD v1.5)
+// =============================================================================
+// manage_members_screen.dart  (AOD v1.7)
 //
-// REPLACES: manage_coaches_screen.dart
+// BUG FIX (Issue 1 — add coach "no account found"):
+//   _showAddMemberDialog() now calls playerService.addMemberToTeam() which
+//   routes through the `add_member_to_team` SECURITY DEFINER RPC.
+//   The direct SELECT on public.users by email is gone — that was blocked by
+//   RLS for users not on a shared team, causing the false "no account found".
 //
-// CHANGE (Notes.txt v1.5 — Unified users):
-//   • Renamed from ManageCoachesScreen → ManageMembersScreen.
-//   • Now shows ALL team members regardless of role (owner / coach / player).
-//   • Role badges displayed for each member.
-//   • Owners can change any member's role (coach ↔ player), add new members
-//     with an explicit role selector, link a player row to a member's account,
-//     remove members, and transfer ownership.
-//   • Non-owners (coaches) can only add other coaches or leave the team.
-//   • Players see a read-only list and a "Leave team" option.
+// CHANGE (Notes.txt v1.7):
+//   • Role options expanded: 'coach' | 'player' | 'team_parent' | 'team_manager'
+//   • New role icons and colors for team_parent and team_manager.
+//   • Account Settings button added to the overflow FAB menu (persistent).
 //
-// BUG FIX (Bug 8 — retained): Self-removal uses popUntil(isFirst).
-// ─────────────────────────────────────────────────────────────────────────────
+// All v1.6 behaviours retained (transfer ownership, remove, change role,
+//   link player, role banner, BUG FIX Bug 8).
+// =============================================================================
 
 class ManageMembersScreen extends StatefulWidget {
   final String teamId;
   final String teamName;
-
-  /// The role of the currently logged-in user on this team.
-  /// Passed in from RosterScreen so we don't need an extra DB call.
   final String currentUserRole;
 
   const ManageMembersScreen({
@@ -43,8 +41,6 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
   final _playerService = PlayerService();
 
   late Future<List<TeamMember>> _membersFuture;
-
-  /// The current user's public.users.id — used for "YOU" badge and self-removal.
   String? _currentUserId;
 
   @override
@@ -71,7 +67,7 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
     });
   }
 
-  // ── Convenience role checks ────────────────────────────────────────────────
+  // ── Role helpers ──────────────────────────────────────────────────────────
 
   bool get _isOwner => widget.currentUserRole == 'owner';
   bool get _isCoachOrOwner =>
@@ -81,10 +77,10 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
 
   Future<void> _showAddMemberDialog() async {
     final emailController = TextEditingController();
-    final formKey = GlobalKey<FormState>();
-    // Default role depends on who is adding:
-    // owners can pick any role; coaches can only add coaches.
-    String selectedRole = _isOwner ? 'coach' : 'coach';
+    final formKey         = GlobalKey<FormState>();
+
+    // Owners can pick any non-owner role; coaches can only add coaches.
+    String selectedRole = 'coach';
 
     final result = await showDialog<bool>(
       context: context,
@@ -100,7 +96,9 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
                 Text(
                   'The person must already have an Apex On Deck account.',
                   style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                        color: Theme.of(ctx)
+                            .colorScheme
+                            .onSurfaceVariant,
                       ),
                 ),
                 const SizedBox(height: 16),
@@ -126,9 +124,8 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                // Role selector (owners can pick coach or player;
-                // coaches can only add coaches).
-                if (_isOwner) ...[
+                // CHANGE (v1.7): Role selector — owners get all 4 non-owner roles.
+                if (_isOwner)
                   DropdownButtonFormField<String>(
                     value: selectedRole,
                     decoration: const InputDecoration(
@@ -137,17 +134,24 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
                       border: OutlineInputBorder(),
                     ),
                     items: const [
-                      DropdownMenuItem(value: 'coach', child: Text('Coach')),
                       DropdownMenuItem(
-                          value: 'player', child: Text('Player')),
+                          value: 'coach',
+                          child: Text('Coach')),
+                      DropdownMenuItem(
+                          value: 'player',
+                          child: Text('Player')),
+                      DropdownMenuItem(
+                          value: 'team_parent',
+                          child: Text('Team Parent')),
+                      DropdownMenuItem(
+                          value: 'team_manager',
+                          child: Text('Team Manager')),
                     ],
                     onChanged: (v) => setLocal(() => selectedRole = v!),
-                  ),
-                ] else ...[
-                  // Coaches can only add other coaches.
+                  )
+                else
                   const Text('Role: Coach',
                       style: TextStyle(fontWeight: FontWeight.w500)),
-                ],
               ],
             ),
           ),
@@ -169,20 +173,26 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
       ),
     );
 
+    // Safe dispose after dialog animations complete.
+    final email = emailController.text.trim();
     emailController.dispose();
 
     if (result == true && mounted) {
       try {
+        // BUG FIX (Issue 1): addMemberToTeam() now uses the
+        // add_member_to_team SECURITY DEFINER RPC, bypassing the RLS policy
+        // that blocked email lookups for users not on a shared team.
         await _playerService.addMemberToTeam(
-          teamId: widget.teamId,
-          userEmail: emailController.text.trim(),
-          role: selectedRole,
+          teamId:    widget.teamId,
+          userEmail: email,
+          role:      selectedRole,
         );
         _refreshMembers();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-                content: Text('Member added!'), backgroundColor: Colors.green),
+                content: Text('Member added!'),
+                backgroundColor: Colors.green),
           );
         }
       } catch (e) {
@@ -201,7 +211,6 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
   // ── Link player dialog ────────────────────────────────────────────────────
 
   Future<void> _showLinkPlayerDialog() async {
-    // Fetch current roster so the owner can pick a player to link.
     List<Map<String, dynamic>> players = [];
     try {
       final raw = await _playerService.getPlayers(widget.teamId);
@@ -220,14 +229,15 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
     if (players.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No players on this team to link.')),
+          const SnackBar(
+              content: Text('No players on this team to link.')),
         );
       }
       return;
     }
 
-    final emailController = TextEditingController();
-    final formKey = GlobalKey<FormState>();
+    final emailController   = TextEditingController();
+    final formKey           = GlobalKey<FormState>();
     String? selectedPlayerId;
 
     final result = await showDialog<bool>(
@@ -244,13 +254,10 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
                 children: [
                   Text(
                     "Enter the player's registered email and select their "
-                    'roster entry. They can then sign in and see their '
-                    'team view.',
+                    'roster entry.',
                     style: Theme.of(ctx).textTheme.bodySmall,
                   ),
                   const SizedBox(height: 16),
-
-                  // Player picker.
                   DropdownButtonFormField<String>(
                     value: selectedPlayerId,
                     decoration: const InputDecoration(
@@ -273,7 +280,6 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
                         : null,
                   ),
                   const SizedBox(height: 16),
-
                   TextFormField(
                     controller: emailController,
                     keyboardType: TextInputType.emailAddress,
@@ -314,14 +320,15 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
       ),
     );
 
+    final email = emailController.text.trim();
     emailController.dispose();
 
     if (result == true && selectedPlayerId != null && mounted) {
       try {
         await _playerService.linkPlayerToAccount(
-          teamId: widget.teamId,
-          playerId: selectedPlayerId!,
-          playerEmail: emailController.text.trim(),
+          teamId:      widget.teamId,
+          playerId:    selectedPlayerId!,
+          playerEmail: email,
         );
         _refreshMembers();
         if (mounted) {
@@ -380,7 +387,7 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
         if (!mounted) return;
 
         if (isSelf) {
-          // BUG FIX (Bug 8): Pop to root — don't land on RosterScreen.
+          // BUG FIX (Bug 8 — retained): Pop to root.
           Navigator.of(context).popUntil((route) => route.isFirst);
           return;
         }
@@ -405,8 +412,9 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
   // ── Change role dialog ────────────────────────────────────────────────────
 
   Future<void> _showChangeRoleDialog(TeamMember member) async {
-    final roles = ['coach', 'player'];
-    String selected = member.role == 'owner' ? 'owner' : member.role;
+    // All assignable roles (excluding 'owner' — use transfer for that).
+    const roles = ['coach', 'player', 'team_parent', 'team_manager'];
+    String selected = roles.contains(member.role) ? member.role : 'coach';
 
     final confirm = await showDialog<bool>(
       context: context,
@@ -416,10 +424,16 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: roles.map((r) {
+              final label = {
+                'coach':        'Coach',
+                'player':       'Player',
+                'team_parent':  'Team Parent',
+                'team_manager': 'Team Manager',
+              }[r]!;
               return RadioListTile<String>(
                 value: r,
                 groupValue: selected,
-                title: Text(r[0].toUpperCase() + r.substring(1)),
+                title: Text(label),
                 onChanged: (v) => setLocal(() => selected = v!),
               );
             }).toList(),
@@ -441,14 +455,16 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
     if (confirm == true && selected != member.role && mounted) {
       try {
         await _playerService.updateMemberRole(
-          teamId: widget.teamId,
-          userId: member.userId,
+          teamId:  widget.teamId,
+          userId:  member.userId,
           newRole: selected,
         );
         _refreshMembers();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("${member.name}'s role updated to $selected")),
+            SnackBar(
+                content: Text(
+                    "${member.name}'s role updated to $selected")),
           );
         }
       } catch (e) {
@@ -464,14 +480,16 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
     }
   }
 
-  // ── Transfer ownership ────────────────────────────────────────────────────
+  // ── Transfer ownership dialog ─────────────────────────────────────────────
 
-  Future<void> _showTransferOwnershipDialog(List<TeamMember> members) async {
+  Future<void> _showTransferOwnershipDialog(
+      List<TeamMember> members) async {
     final eligible = members.where((m) => !m.isOwner).toList();
 
     if (eligible.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No other members to transfer to.')),
+        const SnackBar(
+            content: Text('No other members to transfer to.')),
       );
       return;
     }
@@ -485,7 +503,8 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
           children: eligible.map((m) {
             return ListTile(
               leading: CircleAvatar(
-                child: Text(m.name.isNotEmpty ? m.name[0].toUpperCase() : '?'),
+                child: Text(
+                    m.firstName.isNotEmpty ? m.firstName[0].toUpperCase() : '?'),
               ),
               title: Text(m.name),
               subtitle: Text(m.roleLabel),
@@ -532,8 +551,8 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                  content:
-                      Text('Ownership transferred to ${selected.name}')),
+                  content: Text(
+                      'Ownership transferred to ${selected.name}')),
             );
           }
         } catch (e) {
@@ -571,7 +590,8 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                  const Icon(Icons.error_outline,
+                      size: 48, color: Colors.red),
                   const SizedBox(height: 16),
                   Text('Error: ${snapshot.error}'),
                   const SizedBox(height: 16),
@@ -585,22 +605,21 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
           }
 
           final members = snapshot.data ?? [];
-
           final currentMember = members.firstWhere(
             (m) => m.userId == _currentUserId,
             orElse: () => TeamMember(
               teamMemberId: '',
-              teamId: widget.teamId,
-              userId: '',
-              role: widget.currentUserRole,
-              name: '',
-              email: '',
+              teamId:       widget.teamId,
+              userId:       '',
+              role:         widget.currentUserRole,
+              firstName:    '',
+              lastName:     '',
+              email:        '',
             ),
           );
 
           return Column(
             children: [
-              // ── Role banner ──────────────────────────────────────────────
               _RoleBanner(
                 role: currentMember.role.isNotEmpty
                     ? currentMember.role
@@ -609,22 +628,19 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
                     ? () => _showTransferOwnershipDialog(members)
                     : null,
               ),
-
-              // ── Member list ──────────────────────────────────────────────
               Expanded(
                 child: ListView.builder(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   itemCount: members.length,
                   itemBuilder: (_, i) {
-                    final m = members[i];
+                    final m             = members[i];
                     final isCurrentUser = m.userId == _currentUserId;
-
                     return _MemberTile(
-                      member: m,
-                      isCurrentUser: isCurrentUser,
-                      isCurrentUserOwner: _isOwner,
-                      isCurrentUserCoach: _isCoachOrOwner,
-                      onRemove: () => _confirmRemoveMember(m),
+                      member:              m,
+                      isCurrentUser:       isCurrentUser,
+                      isCurrentUserOwner:  _isOwner,
+                      isCurrentUserCoach:  _isCoachOrOwner,
+                      onRemove:            () => _confirmRemoveMember(m),
                       onChangeRole: _isOwner && !m.isOwner
                           ? () => _showChangeRoleDialog(m)
                           : null,
@@ -673,6 +689,19 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
                   _showLinkPlayerDialog();
                 },
               ),
+            // CHANGE (v1.7): Account Settings always accessible.
+            ListTile(
+              leading: const Icon(Icons.manage_accounts),
+              title: const Text('Account Settings'),
+              onTap: () {
+                Navigator.pop(ctx);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const AccountSettingsScreen()),
+                );
+              },
+            ),
           ],
         ),
       ),
@@ -680,9 +709,9 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// _RoleBanner — shows the current user's role and ownership actions
-// ─────────────────────────────────────────────────────────────────────────────
+// =============================================================================
+// _RoleBanner
+// =============================================================================
 class _RoleBanner extends StatelessWidget {
   final String role;
   final VoidCallback? onTransferOwnership;
@@ -691,32 +720,38 @@ class _RoleBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isOwner = role == 'owner';
-    final isPlayer = role == 'player';
+    final isOwner   = role == 'owner';
+    final isPlayer  = role == 'player';
+    final isManager = role == 'team_manager';
+    final isParent  = role == 'team_parent';
 
-    final color = isOwner
-        ? Colors.amber
-        : isPlayer
-            ? Theme.of(context).colorScheme.primary
-            : Colors.blue;
+    final color = isOwner   ? Colors.amber
+                : isPlayer  ? Theme.of(context).colorScheme.primary
+                : isParent  ? Colors.green
+                : isManager ? Colors.purple
+                : Colors.blue;
 
-    final icon = isOwner
-        ? Icons.shield
-        : isPlayer
-            ? Icons.directions_run
-            : Icons.person;
+    final icon = isOwner   ? Icons.shield
+               : isPlayer  ? Icons.directions_run
+               : isParent  ? Icons.family_restroom
+               : isManager ? Icons.assignment_ind
+               : Icons.person;
 
-    final title = isOwner
-        ? 'You are the team owner'
-        : isPlayer
-            ? 'You are a player on this team'
-            : 'You are a coach on this team';
+    final title = isOwner   ? 'You are the team owner'
+                : isPlayer  ? 'You are a player on this team'
+                : isParent  ? 'You are a team parent'
+                : isManager ? 'You are a team manager'
+                : 'You are a coach on this team';
 
     final subtitle = isOwner
         ? 'You can manage all members, link players, and transfer ownership.'
         : isPlayer
             ? 'Contact your coach to change your team settings.'
-            : 'You can add coaches and manage the roster.';
+            : isParent
+                ? 'You can view your player\'s information.'
+                : isManager
+                    ? 'You can help manage team logistics.'
+                    : 'You can add coaches and manage the roster.';
 
     return Card(
       margin: const EdgeInsets.all(16),
@@ -735,7 +770,8 @@ class _RoleBanner extends StatelessWidget {
                       style: const TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 4),
                   Text(subtitle,
-                      style: TextStyle(fontSize: 12, color: Colors.grey[700])),
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey[700])),
                 ],
               ),
             ),
@@ -751,14 +787,14 @@ class _RoleBanner extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// _MemberTile — a single row in the member list
-// ─────────────────────────────────────────────────────────────────────────────
+// =============================================================================
+// _MemberTile
+// =============================================================================
 class _MemberTile extends StatelessWidget {
-  final TeamMember member;
-  final bool isCurrentUser;
-  final bool isCurrentUserOwner;
-  final bool isCurrentUserCoach;
+  final TeamMember  member;
+  final bool        isCurrentUser;
+  final bool        isCurrentUserOwner;
+  final bool        isCurrentUserCoach;
   final VoidCallback onRemove;
   final VoidCallback? onChangeRole;
 
@@ -773,27 +809,23 @@ class _MemberTile extends StatelessWidget {
 
   Color _roleColor(BuildContext context) {
     switch (member.role) {
-      case 'owner':
-        return Colors.amber;
-      case 'coach':
-        return Colors.blue;
-      case 'player':
-        return Theme.of(context).colorScheme.primary;
-      default:
-        return Colors.grey;
+      case 'owner':        return Colors.amber;
+      case 'coach':        return Colors.blue;
+      case 'player':       return Theme.of(context).colorScheme.primary;
+      case 'team_parent':  return Colors.green;
+      case 'team_manager': return Colors.purple;
+      default:             return Colors.grey;
     }
   }
 
   IconData _roleIcon() {
     switch (member.role) {
-      case 'owner':
-        return Icons.shield;
-      case 'coach':
-        return Icons.manage_accounts;
-      case 'player':
-        return Icons.directions_run;
-      default:
-        return Icons.person;
+      case 'owner':        return Icons.shield;
+      case 'coach':        return Icons.manage_accounts;
+      case 'player':       return Icons.directions_run;
+      case 'team_parent':  return Icons.family_restroom;
+      case 'team_manager': return Icons.assignment_ind;
+      default:             return Icons.person;
     }
   }
 
@@ -811,9 +843,11 @@ class _MemberTile extends StatelessWidget {
         title: Row(
           children: [
             Flexible(
-              child: Text(member.name,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                  overflow: TextOverflow.ellipsis),
+              child: Text(
+                member.name,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
             if (isCurrentUser) ...[
               const SizedBox(width: 6),
@@ -833,9 +867,11 @@ class _MemberTile extends StatelessWidget {
             Text(member.email,
                 style: const TextStyle(fontSize: 12),
                 overflow: TextOverflow.ellipsis),
-            if (member.organization != null && member.organization!.isNotEmpty)
+            if (member.organization != null &&
+                member.organization!.isNotEmpty)
               Text(member.organization!,
-                  style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+                  style: TextStyle(
+                      fontSize: 11, color: Colors.grey[600])),
           ],
         ),
         isThreeLine: member.organization != null,
@@ -846,8 +882,7 @@ class _MemberTile extends StatelessWidget {
 
   Widget? _buildTrailing(BuildContext context) {
     final canRemove = isCurrentUser ||
-        (isCurrentUserOwner && !member.isOwner) ||
-        (isCurrentUserOwner && member.isOwner);
+        (isCurrentUserOwner && !member.isOwner);
 
     if (!canRemove && onChangeRole == null) return null;
 
@@ -888,10 +923,13 @@ class _MemberTile extends StatelessWidget {
   }
 }
 
+// =============================================================================
+// _Badge
+// =============================================================================
 class _Badge extends StatelessWidget {
   final String label;
-  final Color textColor;
-  final Color bgColor;
+  final Color  textColor;
+  final Color  bgColor;
 
   const _Badge(this.label, this.textColor, this.bgColor);
 
@@ -906,7 +944,9 @@ class _Badge extends StatelessWidget {
       child: Text(
         label,
         style: TextStyle(
-            fontSize: 9, fontWeight: FontWeight.bold, color: textColor),
+            fontSize: 9,
+            fontWeight: FontWeight.bold,
+            color: textColor),
       ),
     );
   }

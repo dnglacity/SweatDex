@@ -1,18 +1,19 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/foundation.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// auth_service.dart  (AOD v1.5)
+// =============================================================================
+// auth_service.dart  (AOD v1.7)
 //
-// CHANGE (Notes.txt v1.5 — Unified users):
-//   All references to the `coaches` table are replaced with the `users` table.
-//   The DB trigger `on_auth_user_created` now inserts into `users` (not
-//   `coaches`).  The retry helper polls `users` instead of `coaches`.
-//
-//   getCurrentUser() returns an AppUser (from the `users` table).
-//   The concept of "getting the current coach" is gone — there is only a user,
-//   whose role is determined per-team from the `team_members` table.
-// ─────────────────────────────────────────────────────────────────────────────
+// CHANGE (Notes.txt v1.7):
+//   • signUp() now accepts `firstName`, `lastName` (replaces `name`).
+//     Passes both via raw_user_meta_data so the on_auth_user_created trigger
+//     writes them to users.first_name and users.last_name.
+//   • signUp() accepts optional `athleteId` — stored in users.athlete_id.
+//   • deleteAccount() — calls the new delete_account() SECURITY DEFINER RPC,
+//     then signs out. The RPC blocks deletion if the user is a sole team owner.
+//   • updateProfile() — updates first_name, last_name, nickname, email in
+//     the public.users row.
+// =============================================================================
 
 class AuthService {
   final _supabase = Supabase.instance.client;
@@ -27,55 +28,63 @@ class AuthService {
 
   // ── Sign Up ───────────────────────────────────────────────────────────────
 
-  /// Creates a new auth user and waits for the DB trigger to create the
-  /// corresponding `users` row, then updates `organization` if provided.
+  /// Creates a new auth user.
   ///
-  /// The DB trigger `on_auth_user_created` inserts into `public.users`
-  /// using `name` and `email` from raw_user_meta_data / auth.users.
-  ///
-  /// BUG FIX (Bug 5 — retained from v1.4): Polling retry instead of fixed delay.
+  /// CHANGE (v1.7): accepts firstName / lastName instead of name.
+  /// athleteId is optional.
   Future<AuthResponse> signUp({
     required String email,
     required String password,
-    required String name,
+    required String firstName,
+    required String lastName,
     String? organization,
+    String? athleteId,
   }) async {
-    // Create the auth user. The DB trigger creates the public.users row.
     final response = await _supabase.auth.signUp(
       email: email,
       password: password,
       data: {
-        'name': name,
-        'organization': organization,
+        'first_name':   firstName,
+        'last_name':    lastName,
+        // Keep a combined `name` in meta so the existing DB trigger still
+        // populates the name column correctly.
+        'name':         '${firstName.trim()} ${lastName.trim()}'.trim(),
+        if (organization != null && organization.isNotEmpty)
+          'organization': organization,
+        if (athleteId != null && athleteId.isNotEmpty)
+          'athlete_id': athleteId,
       },
     );
 
-    // If an organization was provided, update the users row once the trigger
-    // has created it.
-    if (response.user != null &&
-        organization != null &&
-        organization.isNotEmpty) {
-      await _updateOrganizationWithRetry(response.user!.id, organization);
+    // If extra fields were provided, update the users row after the trigger
+    // creates it (organization + athlete_id may not be handled by the trigger).
+    if (response.user != null) {
+      final updates = <String, dynamic>{};
+      if (organization != null && organization.isNotEmpty) {
+        updates['organization'] = organization;
+      }
+      if (athleteId != null && athleteId.isNotEmpty) {
+        updates['athlete_id'] = athleteId;
+      }
+      if (updates.isNotEmpty) {
+        await _updateUserRowWithRetry(response.user!.id, updates);
+      }
     }
 
     return response;
   }
 
-  // ── Organization update retry ─────────────────────────────────────────────
+  // ── Retry helper ──────────────────────────────────────────────────────────
 
-  static const int _maxTriggerRetries = 5;
-  static const Duration _triggerRetryDelay = Duration(milliseconds: 300);
+  static const int      _maxTriggerRetries  = 5;
+  static const Duration _triggerRetryDelay  = Duration(milliseconds: 300);
 
-  /// Polls until the `users` row for [authUserId] exists (created by the DB
-  /// trigger), then writes [organization] to it.
-  ///
-  /// Failure is non-fatal — sign-up was still successful.
-  Future<void> _updateOrganizationWithRetry(
-      String authUserId, String organization) async {
+  /// Polls until the `users` row for [authUserId] exists, then writes [fields].
+  Future<void> _updateUserRowWithRetry(
+      String authUserId, Map<String, dynamic> fields) async {
     for (int attempt = 1; attempt <= _maxTriggerRetries; attempt++) {
       await Future.delayed(_triggerRetryDelay);
       try {
-        // CHANGE (v1.5): poll `users` table instead of `coaches`.
         final existing = await _supabase
             .from('users')
             .select('id')
@@ -83,24 +92,21 @@ class AuthService {
             .maybeSingle();
 
         if (existing != null) {
-          // Row exists — write the organization field.
           await _supabase
               .from('users')
-              .update({'organization': organization})
+              .update(fields)
               .eq('user_id', authUserId);
           return;
         }
       } catch (e) {
-        debugPrint('⚠️ Organization update attempt $attempt failed: $e');
+        debugPrint('⚠️ User row update attempt $attempt failed: $e');
       }
     }
-    debugPrint(
-        '⚠️ Could not update organization after $_maxTriggerRetries attempts.');
+    debugPrint('⚠️ Could not update user row after $_maxTriggerRetries attempts.');
   }
 
   // ── Sign In ───────────────────────────────────────────────────────────────
 
-  /// Signs in with email and password.
   Future<AuthResponse> signIn({
     required String email,
     required String password,
@@ -114,13 +120,10 @@ class AuthService {
   // ── Profile ───────────────────────────────────────────────────────────────
 
   /// Returns the raw `users` map for the currently signed-in user, or null.
-  ///
-  /// CHANGE (v1.5): Queries `users` table (was `coaches`).
   Future<Map<String, dynamic>?> getCurrentUserProfile() async {
     try {
       final authUser = currentUser;
       if (authUser == null) return null;
-
       return await _supabase
           .from('users')
           .select()
@@ -132,23 +135,72 @@ class AuthService {
     }
   }
 
+  /// Updates the user's profile fields in public.users.
+  ///
+  /// CHANGE (v1.7): replaces the old organization-only update.
+  /// Accepts any subset of: firstName, lastName, nickname, email.
+  Future<void> updateProfile({
+    String? firstName,
+    String? lastName,
+    String? nickname,
+    String? email,
+    String? organization,
+    String? athleteId,
+  }) async {
+    final authUser = currentUser;
+    if (authUser == null) throw Exception('Not logged in.');
+
+    final updates = <String, dynamic>{};
+    if (firstName    != null) updates['first_name']   = firstName;
+    if (lastName     != null) updates['last_name']    = lastName;
+    if (nickname     != null) updates['nickname']     = nickname;
+    if (email        != null) updates['email']        = email;
+    if (organization != null) updates['organization'] = organization;
+    if (athleteId    != null) updates['athlete_id']   = athleteId;
+
+    if (updates.isEmpty) return;
+
+    await _supabase
+        .from('users')
+        .update(updates)
+        .eq('user_id', authUser.id);
+
+    // If email changed, also update it in Supabase Auth.
+    if (email != null) {
+      await _supabase.auth.updateUser(UserAttributes(email: email));
+    }
+  }
+
+  // ── Delete Account ────────────────────────────────────────────────────────
+
+  /// Deletes the current user's account.
+  ///
+  /// CHANGE (v1.7): Calls the `delete_account` SECURITY DEFINER RPC which
+  /// blocks the deletion if the user is the sole owner of any team.
+  /// On success, signs the user out locally.
+  ///
+  /// Throws an Exception with a user-readable message if blocked.
+  Future<void> deleteAccount() async {
+    // The RPC raises an exception with a message like
+    // "You are the sole owner of 'Team Name'…" which we re-throw.
+    await _supabase.rpc('delete_account');
+    // Sign out after the public.users row is deleted.
+    await _supabase.auth.signOut();
+  }
+
   // ── Sign Out ──────────────────────────────────────────────────────────────
 
-  /// Signs the current user out.
   Future<void> signOut() async {
     await _supabase.auth.signOut();
   }
 
   // ── Password Reset ────────────────────────────────────────────────────────
 
-  /// Sends a password reset email to [email].
   Future<void> resetPassword(String email) async {
     await _supabase.auth.resetPasswordForEmail(email);
   }
 
   // ── Auth State Stream ─────────────────────────────────────────────────────
 
-  /// Stream of auth state changes — used by [AuthWrapper] to react to
-  /// sign-in and sign-out events.
   Stream<AuthState> get authStateChanges => _supabase.auth.onAuthStateChange;
 }

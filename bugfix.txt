@@ -1,2 +1,287 @@
 Issue 1:
-unable to add coach to team; error says no account found. The account is verified to be in the public.users table.
+Attempted to add coach to team; although coach appeared after refreshing and accessing team member screen.
+
+══╡ EXCEPTION CAUGHT BY WIDGETS LIBRARY ╞═══════════════════════════════════════════════════════════
+The following assertion was thrown building RawGestureDetector(state:
+RawGestureDetectorState#60d4a(gestures: [tap, long press, tap and pan], excludeFromSemantics: true,
+behavior: translucent)):
+A TextEditingController was used after being disposed.
+Once you have called dispose() on a TextEditingController, it can no longer be used.
+
+The relevant error-causing widget was:
+  TextFormField
+  TextFormField:file:///C:/Users/Derrick/Documents/SweatDex/sweatdex/lib/screens/manage_members_screen.dart:1
+  07:17
+
+When the exception was thrown, this was the stack:
+dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/errors.dart 274:3       throw_
+package:flutter/src/foundation/change_notifier.dart 182:9                         <fn>
+package:flutter/src/foundation/change_notifier.dart 188:14                        debugAssertNotDisposed     
+package:flutter/src/foundation/change_notifier.dart 271:27                        addListener
+package:flutter/src/foundation/change_notifier.dart 500:14                        addListener
+package:flutter/src/widgets/transitions.dart 119:14                               didUpdateWidget
+package:flutter/src/widgets/framework.dart 5991:55                                update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 7122:14                                update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 5841:16                                performRebuild
+package:flutter/src/widgets/framework.dart 5982:11                                performRebuild
+package:flutter/src/widgets/framework.dart 5529:7                                 rebuild
+package:flutter/src/widgets/framework.dart 6007:5                                 update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 5841:16                                performRebuild
+package:flutter/src/widgets/framework.dart 5982:11                                performRebuild
+package:flutter/src/widgets/framework.dart 5529:7                                 rebuild
+package:flutter/src/widgets/framework.dart 6007:5                                 update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 7122:14                                update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 5841:16                                performRebuild
+package:flutter/src/widgets/framework.dart 5982:11                                performRebuild
+package:flutter/src/widgets/framework.dart 5529:7                                 rebuild
+package:flutter/src/widgets/framework.dart 6007:5                                 update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 7122:14                                update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 7122:14                                update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 7122:14                                update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 5841:16                                performRebuild
+package:flutter/src/widgets/framework.dart 5982:11                                performRebuild
+package:flutter/src/widgets/framework.dart 5529:7                                 rebuild
+package:flutter/src/widgets/framework.dart 6007:5                                 update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 5841:16                                performRebuild
+package:flutter/src/widgets/framework.dart 5529:7                                 rebuild
+package:flutter/src/widgets/framework.dart 6149:5                                 update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 7122:14                                update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 5841:16                                performRebuild
+package:flutter/src/widgets/framework.dart 5982:11                                performRebuild
+package:flutter/src/widgets/framework.dart 5529:7                                 rebuild
+package:flutter/src/widgets/framework.dart 2750:14                                [_tryRebuild]
+package:flutter/src/widgets/framework.dart 2807:11                                [_flushDirtyElements]      
+package:flutter/src/widgets/framework.dart 3111:17                                buildScope
+package:flutter/src/widgets/binding.dart 1302:9                                   drawFrame
+package:flutter/src/rendering/binding.dart 495:5
+[_handlePersistentFrameCallback]
+dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/operations.dart 118:77  tear
+package:flutter/src/scheduler/binding.dart 1430:7                                 [_invokeFrameCallback]     
+package:flutter/src/scheduler/binding.dart 1345:9                                 handleDrawFrame
+package:flutter/src/scheduler/binding.dart 1198:5                                 [_handleDrawFrame]
+dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/operations.dart 118:77  tear
+lib/_engine/engine/platform_dispatcher.dart 1689:5                                invoke
+lib/_engine/engine/platform_dispatcher.dart 265:5                                 invokeOnDrawFrame
+lib/_engine/engine/frame_service.dart 209:32                                      [_renderFrame]
+lib/_engine/engine/frame_service.dart 117:9                                       <fn>
+dart-sdk/lib/async/zone.dart 962:54                                               runUnary
+dart-sdk/lib/async/zone.dart 917:26                                               <fn>
+dart-sdk/lib/_internal/js_dev_runtime/patch/js_allow_interop_patch.dart 224:27    _callDartFunctionFast1     
+dart-sdk/lib/_internal/js_dev_runtime/patch/js_allow_interop_patch.dart 84:15     ret
+
+════════════════════════════════════════════════════════════════════════════════════════════════════
+Another exception was thrown: A RenderFlex overflowed by 99019 pixels on the bottom.
+Another exception was thrown: Assertion failed:
+file:///C:/Users/Derrick/Documents/flutter/flutter/packages/flutter/lib/src/widgets/framework.dart:6268:12   
+Another exception was thrown: Tried to build dirty widget in the wrong build scope.
+Error adding member: PostgrestException(message: This person is already a member of the team., code: P0001,  
+details: , hint: null)
+
+Issue 1.2:
+Attempted to add a second coach and did not appear after refreshing.
+
+══╡ EXCEPTION CAUGHT BY WIDGETS LIBRARY ╞═══════════════════════════════════════════════════════════
+The following assertion was thrown building RawGestureDetector(state:
+RawGestureDetectorState#c5dc4(gestures: [tap, long press, tap and pan], excludeFromSemantics: true,
+behavior: translucent)):
+A TextEditingController was used after being disposed.
+Once you have called dispose() on a TextEditingController, it can no longer be used.
+
+The relevant error-causing widget was:
+  TextFormField
+  TextFormField:file:///C:/Users/Derrick/Documents/SweatDex/sweatdex/lib/screens/manage_members_screen.dart:1
+  07:17
+
+When the exception was thrown, this was the stack:
+dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/errors.dart 274:3       throw_
+package:flutter/src/foundation/change_notifier.dart 182:9                         <fn>
+package:flutter/src/foundation/change_notifier.dart 188:14                        debugAssertNotDisposed     
+package:flutter/src/foundation/change_notifier.dart 271:27                        addListener
+package:flutter/src/foundation/change_notifier.dart 500:14                        addListener
+package:flutter/src/widgets/transitions.dart 119:14                               didUpdateWidget
+package:flutter/src/widgets/framework.dart 5991:55                                update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 7122:14                                update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 5841:16                                performRebuild
+package:flutter/src/widgets/framework.dart 5982:11                                performRebuild
+package:flutter/src/widgets/framework.dart 5529:7                                 rebuild
+package:flutter/src/widgets/framework.dart 6007:5                                 update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 5841:16                                performRebuild
+package:flutter/src/widgets/framework.dart 5982:11                                performRebuild
+package:flutter/src/widgets/framework.dart 5529:7                                 rebuild
+package:flutter/src/widgets/framework.dart 6007:5                                 update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 7122:14                                update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 5841:16                                performRebuild
+package:flutter/src/widgets/framework.dart 5982:11                                performRebuild
+package:flutter/src/widgets/framework.dart 5529:7                                 rebuild
+package:flutter/src/widgets/framework.dart 6007:5                                 update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 7122:14                                update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 7122:14                                update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 7122:14                                update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 5841:16                                performRebuild
+package:flutter/src/widgets/framework.dart 5982:11                                performRebuild
+package:flutter/src/widgets/framework.dart 5529:7                                 rebuild
+package:flutter/src/widgets/framework.dart 6007:5                                 update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 5841:16                                performRebuild
+package:flutter/src/widgets/framework.dart 5529:7                                 rebuild
+package:flutter/src/widgets/framework.dart 6149:5                                 update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 7122:14                                update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 5841:16                                performRebuild
+package:flutter/src/widgets/framework.dart 5982:11                                performRebuild
+package:flutter/src/widgets/framework.dart 5529:7                                 rebuild
+package:flutter/src/widgets/framework.dart 2750:14                                [_tryRebuild]
+package:flutter/src/widgets/framework.dart 2807:11                                [_flushDirtyElements]      
+package:flutter/src/widgets/framework.dart 3111:17                                buildScope
+package:flutter/src/widgets/binding.dart 1302:9                                   drawFrame
+package:flutter/src/rendering/binding.dart 495:5
+[_handlePersistentFrameCallback]
+dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/operations.dart 118:77  tear
+package:flutter/src/scheduler/binding.dart 1430:7                                 [_invokeFrameCallback]     
+package:flutter/src/scheduler/binding.dart 1345:9                                 handleDrawFrame
+package:flutter/src/scheduler/binding.dart 1198:5                                 [_handleDrawFrame]
+dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/operations.dart 118:77  tear
+lib/_engine/engine/platform_dispatcher.dart 1689:5                                invoke
+lib/_engine/engine/platform_dispatcher.dart 265:5                                 invokeOnDrawFrame
+lib/_engine/engine/frame_service.dart 209:32                                      [_renderFrame]
+lib/_engine/engine/frame_service.dart 117:9                                       <fn>
+dart-sdk/lib/async/zone.dart 962:54                                               runUnary
+dart-sdk/lib/async/zone.dart 917:26                                               <fn>
+dart-sdk/lib/_internal/js_dev_runtime/patch/js_allow_interop_patch.dart 224:27    _callDartFunctionFast1     
+dart-sdk/lib/_internal/js_dev_runtime/patch/js_allow_interop_patch.dart 84:15     ret
+
+════════════════════════════════════════════════════════════════════════════════════════════════════
+Another exception was thrown: A RenderFlex overflowed by 99019 pixels on the bottom.
+Another exception was thrown: Assertion failed:
+file:///C:/Users/Derrick/Documents/flutter/flutter/packages/flutter/lib/src/widgets/framework.dart:6268:12   
+Another exception was thrown: Tried to build dirty widget in the wrong build scope.
+Error adding member: PostgrestException(message: insert or update on table "team_members" violates foreign   
+key constraint "team_members_user_id_fkey", code: 23503, details: Key
+(user_id)=(2eac6716-ea22-48aa-9eb8-55bbf77e40bb) is not present in table "users"., hint: null)
+
+Issue 1.3:
+Attempted to add user as team parent. Did not show after refresh:
+══╡ EXCEPTION CAUGHT BY WIDGETS LIBRARY ╞═══════════════════════════════════════════════════════════
+The following assertion was thrown building RawGestureDetector(state:
+RawGestureDetectorState#8073a(gestures: [tap, long press, tap and pan], excludeFromSemantics: true,
+behavior: translucent)):
+A TextEditingController was used after being disposed.
+Once you have called dispose() on a TextEditingController, it can no longer be used.
+
+The relevant error-causing widget was:
+  TextFormField
+  TextFormField:file:///C:/Users/Derrick/Documents/SweatDex/sweatdex/lib/screens/manage_members_screen.dart:1
+  07:17
+
+When the exception was thrown, this was the stack:
+dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/errors.dart 274:3       throw_
+package:flutter/src/foundation/change_notifier.dart 182:9                         <fn>
+package:flutter/src/foundation/change_notifier.dart 188:14                        debugAssertNotDisposed     
+package:flutter/src/foundation/change_notifier.dart 271:27                        addListener
+package:flutter/src/foundation/change_notifier.dart 500:14                        addListener
+package:flutter/src/widgets/transitions.dart 119:14                               didUpdateWidget
+package:flutter/src/widgets/framework.dart 5991:55                                update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 7122:14                                update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 5841:16                                performRebuild
+package:flutter/src/widgets/framework.dart 5982:11                                performRebuild
+package:flutter/src/widgets/framework.dart 5529:7                                 rebuild
+package:flutter/src/widgets/framework.dart 6007:5                                 update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 5841:16                                performRebuild
+package:flutter/src/widgets/framework.dart 5982:11                                performRebuild
+package:flutter/src/widgets/framework.dart 5529:7                                 rebuild
+package:flutter/src/widgets/framework.dart 6007:5                                 update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 7122:14                                update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 5841:16                                performRebuild
+package:flutter/src/widgets/framework.dart 5982:11                                performRebuild
+package:flutter/src/widgets/framework.dart 5529:7                                 rebuild
+package:flutter/src/widgets/framework.dart 6007:5                                 update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 7122:14                                update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 7122:14                                update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 7122:14                                update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 5841:16                                performRebuild
+package:flutter/src/widgets/framework.dart 5982:11                                performRebuild
+package:flutter/src/widgets/framework.dart 5529:7                                 rebuild
+package:flutter/src/widgets/framework.dart 6007:5                                 update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 5841:16                                performRebuild
+package:flutter/src/widgets/framework.dart 5529:7                                 rebuild
+package:flutter/src/widgets/framework.dart 6149:5                                 update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 7122:14                                update
+package:flutter/src/widgets/framework.dart 4037:14                                updateChild
+package:flutter/src/widgets/framework.dart 5841:16                                performRebuild
+package:flutter/src/widgets/framework.dart 5982:11                                performRebuild
+package:flutter/src/widgets/framework.dart 5529:7                                 rebuild
+package:flutter/src/widgets/framework.dart 2750:14                                [_tryRebuild]
+package:flutter/src/widgets/framework.dart 2807:11                                [_flushDirtyElements]      
+package:flutter/src/widgets/framework.dart 3111:17                                buildScope
+package:flutter/src/widgets/binding.dart 1302:9                                   drawFrame
+package:flutter/src/rendering/binding.dart 495:5
+[_handlePersistentFrameCallback]
+dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/operations.dart 118:77  tear
+package:flutter/src/scheduler/binding.dart 1430:7                                 [_invokeFrameCallback]     
+package:flutter/src/scheduler/binding.dart 1345:9                                 handleDrawFrame
+package:flutter/src/scheduler/binding.dart 1198:5                                 [_handleDrawFrame]
+dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/operations.dart 118:77  tear
+lib/_engine/engine/platform_dispatcher.dart 1689:5                                invoke
+lib/_engine/engine/platform_dispatcher.dart 265:5                                 invokeOnDrawFrame
+lib/_engine/engine/frame_service.dart 209:32                                      [_renderFrame]
+lib/_engine/engine/frame_service.dart 117:9                                       <fn>
+dart-sdk/lib/async/zone.dart 962:54                                               runUnary
+dart-sdk/lib/async/zone.dart 917:26                                               <fn>
+dart-sdk/lib/_internal/js_dev_runtime/patch/js_allow_interop_patch.dart 224:27    _callDartFunctionFast1     
+dart-sdk/lib/_internal/js_dev_runtime/patch/js_allow_interop_patch.dart 84:15     ret
+
+════════════════════════════════════════════════════════════════════════════════════════════════════
+Another exception was thrown: A RenderFlex overflowed by 99019 pixels on the bottom.
+Another exception was thrown: Assertion failed:
+file:///C:/Users/Derrick/Documents/flutter/flutter/packages/flutter/lib/src/widgets/framework.dart:6268:12   
+Another exception was thrown: Tried to build dirty widget in the wrong build scope.
+Error adding member: PostgrestException(message: insert or update on table "team_members" violates foreign   
+key constraint "team_members_user_id_fkey", code: 23503, details: Key
+(user_id)=(2eac6716-ea22-48aa-9eb8-55bbf77e40bb) is not present in table "users"., hint: null)
+
+
+Issue 2:
+Created a new account and received this error:
+Error fetching teams: Exception: User profile not found. Please sign out and sign in again.
+Error fetching teams: Exception: User profile not found. Please sign out and sign in again.
+
+Issue 3:
+Attempting to create a new team:
+Error creating team: PostgrestException(message: Could not find the function public.create_team(p_sport,
+p_sport_id, p_team_name) in the schema cache, code: PGRST202, details: Searched for the function
+public.create_team with parameters p_sport, p_sport_id, p_team_name or with a single unnamed json/jsonb      
+parameter, but no matches were found in the schema cache., hint: Perhaps you meant to call the function      
+public.create_team(p_sport, p_team_name))

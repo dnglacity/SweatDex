@@ -3,30 +3,31 @@ import '../models/player.dart';
 import '../services/player_service.dart';
 import '../services/auth_service.dart';
 import 'add_player_screen.dart';
-import 'manage_members_screen.dart';   // CHANGE (v1.5): was manage_coaches_screen
+import 'manage_members_screen.dart';
 import 'saved_roster_screen.dart';
 import 'login_screen.dart';
+import 'account_settings_screen.dart';    // CHANGE (v1.7)
+import 'team_selection_screen.dart';       // for Edit Team dialog
 
-// ─────────────────────────────────────────────────────────────────────────────
-// roster_screen.dart  (AOD v1.5)
+// =============================================================================
+// roster_screen.dart  (AOD v1.7)
 //
-// CHANGE (Notes.txt v1.5 — Unified users):
-//   • Accepts [currentUserRole] ('owner'|'coach') from TeamSelectionScreen.
-//   • Owner-only actions: Delete Roster, Team Settings edit/delete.
-//   • Coach actions: Add Player, Change Status, Game Rosters.
-//   • ManageCoachesScreen → ManageMembersScreen.
-//   • Overflow menu "Coach Settings" → "Manage Members".
+// CHANGE (Notes.txt v1.7):
+//   • "Account Settings" added to the overflow menu (persistent, always
+//     visible). Opens AccountSettingsScreen.
+//   • "Edit Team" added to the overflow menu (maintained throughout team flow).
+//     Owner-only. Uses the same dialog logic as TeamSelectionScreen.
+//   • Player subtitle: student_id / student_email labels replaced with
+//     athlete_id / athlete_email from the updated Player model.
 //
-// All v1.4 pagination, position display, and status features retained.
-// ─────────────────────────────────────────────────────────────────────────────
+// All v1.6 behaviours retained.
+// =============================================================================
 
 class RosterScreen extends StatefulWidget {
   final String teamId;
   final String teamName;
   final String? sport;
-
-  /// CHANGE (v1.5): Role of the currently logged-in user on this team.
-  /// Determines which UI actions are available.
+  final String? sportId;
   final String currentUserRole;
 
   const RosterScreen({
@@ -34,7 +35,8 @@ class RosterScreen extends StatefulWidget {
     required this.teamId,
     required this.teamName,
     this.sport,
-    this.currentUserRole = 'coach', // default for backwards safety
+    this.sportId,
+    this.currentUserRole = 'coach',
   });
 
   @override
@@ -43,25 +45,28 @@ class RosterScreen extends StatefulWidget {
 
 class _RosterScreenState extends State<RosterScreen> {
   final _playerService = PlayerService();
-  final _authService = AuthService();
+  final _authService   = AuthService();
 
   // ── Pagination state ──────────────────────────────────────────────────────
   static const int _pageSize = 20;
 
-  List<Player> _players = [];
-  int _page = 0;
-  bool _hasMore = true;
-  bool _isLoading = true;
-  bool _isPaginating = false;
+  List<Player> _players      = [];
+  int          _page         = 0;
+  bool         _hasMore      = true;
+  bool         _isLoading    = true;
+  bool         _isPaginating = false;
 
   final ScrollController _scrollController = ScrollController();
   static const double _scrollThreshold = 200;
 
-  bool _bulkDeleteMode = false;
+  bool _bulkDeleteMode     = false;
   final Set<String> _selectedIds = {};
 
-  // ── Role helpers ──────────────────────────────────────────────────────────
+  // Locally mutable team name (updated after Edit Team).
+  late String _teamName;
+  late String? _sport;
 
+  // ── Role helpers ──────────────────────────────────────────────────────────
   bool get _isOwner => widget.currentUserRole == 'owner';
   bool get _isCoachOrOwner =>
       widget.currentUserRole == 'owner' || widget.currentUserRole == 'coach';
@@ -69,6 +74,8 @@ class _RosterScreenState extends State<RosterScreen> {
   @override
   void initState() {
     super.initState();
+    _teamName = widget.teamName;
+    _sport    = widget.sport;
     _scrollController.addListener(_onScroll);
     _loadFirstPage();
   }
@@ -94,7 +101,7 @@ class _RosterScreenState extends State<RosterScreen> {
   Future<void> _loadFirstPage() async {
     setState(() {
       _players.clear();
-      _page = 0;
+      _page    = 0;
       _hasMore = true;
       _isLoading = true;
     });
@@ -111,15 +118,13 @@ class _RosterScreenState extends State<RosterScreen> {
 
   Future<void> _fetchPage() async {
     try {
-      final from = _page * _pageSize;
-      final to = from + _pageSize - 1;
-
+      final from  = _page * _pageSize;
+      final to    = from + _pageSize - 1;
       final batch = await _playerService.getPlayersPaginated(
         teamId: widget.teamId,
         from: from,
         to: to,
       );
-
       if (mounted) {
         setState(() {
           _players.addAll(batch);
@@ -143,7 +148,8 @@ class _RosterScreenState extends State<RosterScreen> {
   void _applyLocalStatusChange(String playerId, String newStatus) {
     final idx = _players.indexWhere((p) => p.id == playerId);
     if (idx != -1) {
-      setState(() => _players[idx] = _players[idx].copyWith(status: newStatus));
+      setState(() =>
+          _players[idx] = _players[idx].copyWith(status: newStatus));
     }
   }
 
@@ -184,10 +190,12 @@ class _RosterScreenState extends State<RosterScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            _statusOption('present', 'Present', Icons.check_circle,
+                Colors.green),
             _statusOption(
-                'present', 'Present', Icons.check_circle, Colors.green),
-            _statusOption('absent', 'Absent', Icons.cancel, Colors.red),
-            _statusOption('late', 'Late', Icons.access_time, Colors.orange),
+                'absent', 'Absent', Icons.cancel, Colors.red),
+            _statusOption(
+                'late', 'Late', Icons.access_time, Colors.orange),
             _statusOption('excused', 'Excused', Icons.event_busy,
                 Theme.of(context).colorScheme.primary),
           ],
@@ -225,7 +233,8 @@ class _RosterScreenState extends State<RosterScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.check_circle, color: Colors.green),
+              leading:
+                  const Icon(Icons.check_circle, color: Colors.green),
               title: const Text('Mark All Present'),
               onTap: () => Navigator.pop(ctx, 'present'),
             ),
@@ -234,11 +243,10 @@ class _RosterScreenState extends State<RosterScreen> {
               title: const Text('Mark All Absent'),
               onTap: () => Navigator.pop(ctx, 'absent'),
             ),
-            // CHANGE (v1.5): Bulk delete only for owners.
             if (_isOwner)
               ListTile(
-                leading:
-                    const Icon(Icons.delete_sweep, color: Colors.red),
+                leading: const Icon(Icons.delete_sweep,
+                    color: Colors.red),
                 title: const Text('Bulk Delete',
                     style: TextStyle(color: Colors.red)),
                 onTap: () => Navigator.pop(ctx, 'bulkDelete'),
@@ -265,18 +273,22 @@ class _RosterScreenState extends State<RosterScreen> {
       try {
         await _playerService.bulkUpdateStatus(widget.teamId, action);
         setState(() {
-          _players = _players.map((p) => p.copyWith(status: action)).toList();
+          _players = _players
+              .map((p) => p.copyWith(status: action))
+              .toList();
         });
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('All players marked as $action')),
+            SnackBar(
+                content: Text('All players marked as $action')),
           );
         }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-                content: Text('Error: $e'), backgroundColor: Colors.red),
+                content: Text('Error: $e'),
+                backgroundColor: Colors.red),
           );
         }
       }
@@ -285,8 +297,8 @@ class _RosterScreenState extends State<RosterScreen> {
 
   Future<void> _confirmBulkDelete() async {
     if (_selectedIds.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('No players selected')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No players selected')));
       return;
     }
 
@@ -329,7 +341,8 @@ class _RosterScreenState extends State<RosterScreen> {
             FilledButton(
               onPressed:
                   acknowledged ? () => Navigator.pop(ctx, true) : null,
-              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+              style:
+                  FilledButton.styleFrom(backgroundColor: Colors.red),
               child: const Text('Delete'),
             ),
           ],
@@ -348,20 +361,131 @@ class _RosterScreenState extends State<RosterScreen> {
         });
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('${ids.length} player(s) deleted')),
+            SnackBar(
+                content: Text('${ids.length} player(s) deleted')),
           );
         }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-                content: Text('Error: $e'), backgroundColor: Colors.red),
+                content: Text('Error: $e'),
+                backgroundColor: Colors.red),
           );
         }
         setState(() {
           _bulkDeleteMode = false;
           _selectedIds.clear();
         });
+      }
+    }
+  }
+
+  // ── Edit Team (owner only) ────────────────────────────────────────────────
+  //
+  // CHANGE (v1.7): Edit Team maintained in the options menu throughout the
+  // team flow (not just on TeamSelectionScreen). Delegated to
+  // _showEditTeamInline() which replicates the dialog from TeamSelectionScreen.
+
+  Future<void> _showEditTeamInline() async {
+    // Load sports for autocomplete.
+    List<Map<String, dynamic>> sports = [];
+    try {
+      sports = await _playerService.getSports();
+    } catch (_) {}
+
+    final nameController        = TextEditingController(text: _teamName);
+    String selectedSportName    = _sport ?? 'General';
+    String? selectedSportId     = widget.sportId;
+    final sportSearchController = TextEditingController(text: selectedSportName);
+    final formKey = GlobalKey<FormState>();
+    bool submitted = false;
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Edit Team'),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: nameController,
+                  autofocus: true,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(
+                    labelText: 'Team Name',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (v) => (v == null || v.trim().isEmpty)
+                      ? 'Please enter a team name'
+                      : null,
+                ),
+                const SizedBox(height: 16),
+                _SportAutocompleteField(
+                  controller: sportSearchController,
+                  sports: sports,
+                  initialSportId: selectedSportId,
+                  onSelected: (name, id) {
+                    setLocal(() {
+                      selectedSportName = name;
+                      selectedSportId   = id;
+                    });
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (!submitted && formKey.currentState!.validate()) {
+                  submitted = true;
+                  Navigator.pop(ctx, true);
+                }
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      nameController.dispose();
+      sportSearchController.dispose();
+    });
+
+    if (result == true && mounted) {
+      try {
+        await _playerService.updateTeam(
+          widget.teamId,
+          nameController.text.trim(),
+          selectedSportName,
+          sportId: selectedSportId,
+        );
+        setState(() {
+          _teamName = nameController.text.trim();
+          _sport    = selectedSportName;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Team updated!')));
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text('Error: $e'),
+                backgroundColor: Colors.red),
+          );
+        }
       }
     }
   }
@@ -375,12 +499,20 @@ class _RosterScreenState extends State<RosterScreen> {
         child: Row(children: [
           Icon(Icons.manage_accounts, size: 20),
           SizedBox(width: 12),
-          // CHANGE (v1.5): renamed from "Coach Settings"
           Text('Manage Members'),
         ]),
       ),
+      // CHANGE (v1.7): Edit Team maintained throughout team flow.
+      if (_isOwner)
+        const PopupMenuItem(
+          value: 'editTeam',
+          child: Row(children: [
+            Icon(Icons.edit, size: 20),
+            SizedBox(width: 12),
+            Text('Edit Team'),
+          ]),
+        ),
       const PopupMenuDivider(),
-      // CHANGE (v1.5): Delete Roster only shown to owners.
       if (_isOwner)
         const PopupMenuItem(
           value: 'deleteRoster',
@@ -390,6 +522,16 @@ class _RosterScreenState extends State<RosterScreen> {
             Text('Delete Roster', style: TextStyle(color: Colors.red)),
           ]),
         ),
+      const PopupMenuDivider(),
+      // CHANGE (v1.7): Account Settings — persistent.
+      const PopupMenuItem(
+        value: 'accountSettings',
+        child: Row(children: [
+          Icon(Icons.manage_accounts, size: 20),
+          SizedBox(width: 12),
+          Text('Account Settings'),
+        ]),
+      ),
       const PopupMenuDivider(),
       const PopupMenuItem(
         value: 'logout',
@@ -416,20 +558,29 @@ class _RosterScreenState extends State<RosterScreen> {
 
     switch (action) {
       case 'manageMembers':
-        // CHANGE (v1.5): Navigate to ManageMembersScreen with role passed in.
         await Navigator.push(
           context,
           MaterialPageRoute(
             builder: (_) => ManageMembersScreen(
-              teamId: widget.teamId,
-              teamName: widget.teamName,
+              teamId:          widget.teamId,
+              teamName:        _teamName,
               currentUserRole: widget.currentUserRole,
             ),
           ),
         );
         break;
+      case 'editTeam':
+        if (_isOwner) await _showEditTeamInline();
+        break;
       case 'deleteRoster':
         if (_isOwner) await _confirmDeleteRoster();
+        break;
+      case 'accountSettings':
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (_) => const AccountSettingsScreen()),
+        );
         break;
       case 'logout':
         await _performLogout();
@@ -491,8 +642,8 @@ class _RosterScreenState extends State<RosterScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Permanently delete ALL players from '
-                '"${widget.teamName}"? This cannot be undone.',
+                'Permanently delete ALL players from "$_teamName"? '
+                'This cannot be undone.',
               ),
               const SizedBox(height: 16),
               Row(
@@ -504,7 +655,8 @@ class _RosterScreenState extends State<RosterScreen> {
                         setLocal(() => acknowledged = v ?? false),
                   ),
                   const Expanded(
-                    child: Text('I understand all players will be deleted.',
+                    child: Text(
+                        'I understand all players will be deleted.',
                         style: TextStyle(fontSize: 13)),
                   ),
                 ],
@@ -519,7 +671,8 @@ class _RosterScreenState extends State<RosterScreen> {
             FilledButton(
               onPressed:
                   acknowledged ? () => Navigator.pop(ctx, true) : null,
-              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+              style:
+                  FilledButton.styleFrom(backgroundColor: Colors.red),
               child: const Text('Delete All'),
             ),
           ],
@@ -542,7 +695,8 @@ class _RosterScreenState extends State<RosterScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-                content: Text('Error: $e'), backgroundColor: Colors.red),
+                content: Text('Error: $e'),
+                backgroundColor: Colors.red),
           );
         }
       }
@@ -556,8 +710,8 @@ class _RosterScreenState extends State<RosterScreen> {
     final colorScheme = Theme.of(context).colorScheme;
 
     final present = _players.where((p) => p.status == 'present').length;
-    final absent = _players.where((p) => p.status == 'absent').length;
-    final late = _players.where((p) => p.status == 'late').length;
+    final absent  = _players.where((p) => p.status == 'absent').length;
+    final late    = _players.where((p) => p.status == 'late').length;
     final excused = _players.where((p) => p.status == 'excused').length;
 
     return Scaffold(
@@ -566,12 +720,12 @@ class _RosterScreenState extends State<RosterScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              '${widget.teamName} Roster',
+              '$_teamName Roster',
               style: const TextStyle(
                   fontSize: 18, fontWeight: FontWeight.bold),
             ),
-            if (widget.sport != null && widget.sport!.isNotEmpty)
-              Text(widget.sport!, style: const TextStyle(fontSize: 12)),
+            if (_sport != null && _sport!.isNotEmpty)
+              Text(_sport!, style: const TextStyle(fontSize: 12)),
           ],
         ),
         actions: [
@@ -582,8 +736,8 @@ class _RosterScreenState extends State<RosterScreen> {
               context,
               MaterialPageRoute(
                 builder: (_) => SavedRosterScreen(
-                  teamId: widget.teamId,
-                  teamName: widget.teamName,
+                  teamId:   widget.teamId,
+                  teamName: _teamName,
                 ),
               ),
             ),
@@ -643,17 +797,19 @@ class _RosterScreenState extends State<RosterScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            '${_selectedIds.length} of ${_players.length} selected',
+                            '${_selectedIds.length} of '
+                            '${_players.length} selected',
                             style: const TextStyle(color: Colors.red),
                           ),
                         ),
                         TextButton(
                           onPressed: () => setState(() {
-                            if (_selectedIds.length == _players.length) {
+                            if (_selectedIds.length ==
+                                _players.length) {
                               _selectedIds.clear();
                             } else {
-                              _selectedIds
-                                  .addAll(_players.map((p) => p.id));
+                              _selectedIds.addAll(
+                                  _players.map((p) => p.id));
                             }
                           }),
                           child: Text(
@@ -682,8 +838,8 @@ class _RosterScreenState extends State<RosterScreen> {
                                       fontWeight: FontWeight.bold)),
                               const SizedBox(height: 8),
                               Text('Tap + to add your first player!',
-                                  style:
-                                      TextStyle(color: Colors.grey[600])),
+                                  style: TextStyle(
+                                      color: Colors.grey[600])),
                             ],
                           ),
                         )
@@ -698,10 +854,11 @@ class _RosterScreenState extends State<RosterScreen> {
                               if (i == _players.length) {
                                 if (_isPaginating) {
                                   return const Padding(
-                                    padding:
-                                        EdgeInsets.symmetric(vertical: 16),
+                                    padding: EdgeInsets.symmetric(
+                                        vertical: 16),
                                     child: Center(
-                                        child: CircularProgressIndicator()),
+                                        child:
+                                            CircularProgressIndicator()),
                                   );
                                 }
                                 if (!_hasMore && _players.isNotEmpty) {
@@ -721,7 +878,7 @@ class _RosterScreenState extends State<RosterScreen> {
                                 return const SizedBox.shrink();
                               }
 
-                              final player = _players[i];
+                              final player   = _players[i];
                               final isChecked =
                                   _selectedIds.contains(player.id);
 
@@ -734,7 +891,8 @@ class _RosterScreenState extends State<RosterScreen> {
                                         player, colorScheme),
                                     title: Text(player.name,
                                         style: const TextStyle(
-                                            fontWeight: FontWeight.bold)),
+                                            fontWeight:
+                                                FontWeight.bold)),
                                     subtitle: _buildSubtitle(player),
                                     trailing: Checkbox(
                                       value: isChecked,
@@ -761,7 +919,6 @@ class _RosterScreenState extends State<RosterScreen> {
 
                               return Dismissible(
                                 key: Key(player.id),
-                                // CHANGE (v1.5): only coaches/owners can swipe-delete
                                 direction: _isCoachOrOwner
                                     ? DismissDirection.endToStart
                                     : DismissDirection.none,
@@ -783,7 +940,8 @@ class _RosterScreenState extends State<RosterScreen> {
                                             Navigator.pop(ctx, true),
                                         style: FilledButton.styleFrom(
                                             backgroundColor: Colors.red),
-                                        child: const Text('Delete'),
+                                        child:
+                                            const Text('Delete'),
                                       ),
                                     ],
                                   ),
@@ -817,8 +975,8 @@ class _RosterScreenState extends State<RosterScreen> {
                                         backgroundColor: Colors.red,
                                       ));
                                     }
-                                    setState(
-                                        () => _players.insert(i, player));
+                                    setState(() =>
+                                        _players.insert(i, player));
                                   }
                                 },
                                 child: Card(
@@ -829,12 +987,12 @@ class _RosterScreenState extends State<RosterScreen> {
                                         player, colorScheme),
                                     title: Text(player.name,
                                         style: const TextStyle(
-                                            fontWeight: FontWeight.bold)),
+                                            fontWeight:
+                                                FontWeight.bold)),
                                     subtitle: _buildSubtitle(player),
                                     trailing: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        // Status toggle — all coaches/owners
                                         if (_isCoachOrOwner)
                                           IconButton(
                                             icon: Icon(
@@ -848,10 +1006,10 @@ class _RosterScreenState extends State<RosterScreen> {
                                               size: 28,
                                             ),
                                             onPressed: () async {
-                                              final ns =
-                                                  player.status == 'present'
-                                                      ? 'absent'
-                                                      : 'present';
+                                              final ns = player.status ==
+                                                      'present'
+                                                  ? 'absent'
+                                                  : 'present';
                                               await _updatePlayerStatus(
                                                   player, ns);
                                             },
@@ -934,8 +1092,7 @@ class _RosterScreenState extends State<RosterScreen> {
                                                 value: 'status',
                                                 child: Row(children: [
                                                   Icon(
-                                                      Icons
-                                                          .event_available,
+                                                      Icons.event_available,
                                                       size: 20),
                                                   SizedBox(width: 12),
                                                   Text('Change Status'),
@@ -1065,15 +1222,18 @@ class _RosterScreenState extends State<RosterScreen> {
     if (player.nickname != null && player.nickname!.isNotEmpty) {
       parts.add('"${player.nickname}"');
     }
-    if (player.studentId != null && player.studentId!.isNotEmpty) {
-      parts.add('ID: ${player.studentId}');
+    // CHANGE (v1.7): renamed from studentId → athleteId.
+    if (player.athleteId != null && player.athleteId!.isNotEmpty) {
+      parts.add('ID: ${player.athleteId}');
     }
-    // CHANGE (v1.5): Show account link indicator
+    if (player.grade != null) {
+      parts.add(player.displayGrade);
+    }
     if (player.hasLinkedAccount) {
       parts.add('✓ Linked');
     }
     if (parts.isEmpty) {
-      return Text(player.studentEmail ?? 'No additional info',
+      return Text(player.athleteEmail ?? 'No additional info',
           style: TextStyle(color: Colors.grey[600]));
     }
     return Text(parts.join(' • '),
@@ -1095,13 +1255,18 @@ class _RosterScreenState extends State<RosterScreen> {
               _detailRow('Position', player.position!),
             if (player.nickname != null && player.nickname!.isNotEmpty)
               _detailRow('Nickname', player.nickname!),
-            if (player.studentId != null && player.studentId!.isNotEmpty)
-              _detailRow('Student ID', player.studentId!),
-            if (player.studentEmail != null &&
-                player.studentEmail!.isNotEmpty)
-              _detailRow('Email', player.studentEmail!),
+            // CHANGE (v1.7): renamed labels.
+            if (player.athleteId != null && player.athleteId!.isNotEmpty)
+              _detailRow('Athlete ID', player.athleteId!),
+            if (player.athleteEmail != null &&
+                player.athleteEmail!.isNotEmpty)
+              _detailRow('Athlete Email', player.athleteEmail!),
+            if (player.grade != null)
+              _detailRow('Grade', player.displayGrade),
+            if (player.guardianEmail != null &&
+                player.guardianEmail!.isNotEmpty)
+              _detailRow('Guardian Email', player.guardianEmail!),
             _detailRow('Status', player.statusLabel),
-            // CHANGE (v1.5): Show account link status in detail dialog.
             _detailRow('Account',
                 player.hasLinkedAccount ? 'Linked ✓' : 'Not linked'),
           ],
@@ -1126,7 +1291,7 @@ class _RosterScreenState extends State<RosterScreen> {
                   context,
                   MaterialPageRoute(
                     builder: (_) => AddPlayerScreen(
-                      teamId: widget.teamId,
+                      teamId:       widget.teamId,
                       playerToEdit: player,
                     ),
                   ),
@@ -1149,12 +1314,94 @@ class _RosterScreenState extends State<RosterScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-              width: 100,
+              width: 110,
               child: Text('$label:',
-                  style: const TextStyle(fontWeight: FontWeight.bold))),
+                  style:
+                      const TextStyle(fontWeight: FontWeight.bold))),
           Expanded(child: Text(value)),
         ],
       ),
+    );
+  }
+}
+
+// =============================================================================
+// _SportAutocompleteField — duplicated here so roster_screen.dart is
+// self-contained. Identical to the one in team_selection_screen.dart.
+// Consider extracting to lib/widgets/sport_autocomplete_field.dart.
+// =============================================================================
+class _SportAutocompleteField extends StatelessWidget {
+  final TextEditingController controller;
+  final List<Map<String, dynamic>> sports;
+  final String? initialSportId;
+  final void Function(String name, String? id) onSelected;
+
+  const _SportAutocompleteField({
+    required this.controller,
+    required this.sports,
+    this.initialSportId,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Autocomplete<Map<String, dynamic>>(
+      initialValue: TextEditingValue(text: controller.text),
+      optionsBuilder: (TextEditingValue value) {
+        final query = value.text.toLowerCase();
+        if (query.isEmpty) return sports;
+        return sports.where(
+          (s) => (s['name'] as String).toLowerCase().contains(query),
+        );
+      },
+      displayStringForOption: (s) => s['name'] as String,
+      fieldViewBuilder: (context, textController, focusNode, onSubmit) {
+        textController.text = controller.text;
+        return TextFormField(
+          controller: textController,
+          focusNode: focusNode,
+          decoration: const InputDecoration(
+            labelText: 'Sport',
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.sports),
+          ),
+          onChanged: (v) {
+            controller.text = v;
+            onSelected(v, null);
+          },
+          onFieldSubmitted: (_) => onSubmit(),
+        );
+      },
+      optionsViewBuilder: (context, onOptionSelected, options) {
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 4,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 200),
+              child: ListView.builder(
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
+                itemCount: options.length,
+                itemBuilder: (_, i) {
+                  final sport = options.elementAt(i);
+                  return ListTile(
+                    title: Text(sport['name'] as String),
+                    subtitle:
+                        Text(sport['category'] as String? ?? ''),
+                    onTap: () => onOptionSelected(sport),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
+      onSelected: (sport) {
+        controller.text = sport['name'] as String;
+        onSelected(
+            sport['name'] as String, sport['id'] as String?);
+      },
     );
   }
 }

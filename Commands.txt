@@ -15,7 +15,6 @@ git subtree push --prefix build/web origin gh-pages
 
 
 ------DEBUG
-
 flutter run --dart-define-from-file=config.json
 
 ------
