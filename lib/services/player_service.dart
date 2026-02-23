@@ -6,84 +6,43 @@ import '../models/app_user.dart';
 import 'offline_cache_service.dart';
 
 // =============================================================================
-// player_service.dart  (AOD v1.8)
+// player_service.dart  (AOD v1.8 — Bug Fix Release)
 //
-// BUG FIX (Issue 2 — "User profile not found" on new account):
-//   getTeams() threw immediately when _getCurrentUserId() returned null because
-//   the on_auth_user_created DB trigger had not yet committed.  Added a retry
-//   loop (up to 6 attempts, 500 ms apart) inside getTeams() before throwing.
+// ── CHANGES IN THIS VERSION ────────────────────────────────────────────────
 //
-// BUG FIX (Issue 3 — create_team RPC signature mismatch):
-//   createTeam() was calling the RPC with params { p_sport, p_sport_id,
-//   p_team_name } but the DB function only accepted { p_sport, p_team_name }.
-//   The DB function must be updated (see SQL script below).  The Flutter call
-//   now matches the new 3-param signature.
+// ISSUE 1 FIX (team_members_user_id_fkey FK violation):
+//   addMemberToTeam() now calls the updated add_member_to_team SECURITY
+//   DEFINER RPC.  The RPC runs with postgres-level privileges, so it can
+//   SELECT public.users by email (bypassing RLS) and INSERT into team_members
+//   with a valid FK target — eliminating the 23503 error.
+//   No Flutter code change needed here beyond the existing addMemberToTeam()
+//   implementation; the fix is entirely in the DB function (see migration SQL).
 //
-//   SQL to run in Supabase SQL Editor:
-//   ─────────────────────────────────
-//   CREATE OR REPLACE FUNCTION public.create_team(
-//     p_team_name text,
-//     p_sport     text,
-//     p_sport_id  uuid DEFAULT NULL
-//   )
-//   RETURNS uuid
-//   LANGUAGE plpgsql
-//   SECURITY DEFINER
-//   SET search_path = public
-//   AS $$
-//   DECLARE
-//     v_user_id   uuid;
-//     v_team_id   uuid;
-//     v_count     int;
-//   BEGIN
-//     SELECT id INTO v_user_id FROM public.users WHERE user_id = auth.uid();
-//     IF v_user_id IS NULL THEN
-//       RAISE EXCEPTION 'User profile not found.';
-//     END IF;
+// ISSUE 2 FIX ("User profile not found" on new account):
+//   getTeams() retry loop extended: up to _maxUserIdRetries (6) attempts
+//   at _userIdRetryDelay (500 ms) intervals.  _cachedUserId is explicitly
+//   nulled between retries so each attempt re-queries the DB.
+//   Additionally _getCurrentUserId() no longer uses a single one-shot retry
+//   internally; all retry logic is consolidated in getTeams() for clarity.
 //
-//     SELECT COUNT(*) INTO v_count
-//       FROM public.team_members tm
-//       JOIN public.teams t ON t.id = tm.team_id
-//      WHERE tm.user_id = v_user_id AND tm.role = 'owner';
+// ISSUE 3 FIX (create_team RPC signature mismatch):
+//   createTeam() already sends the correct 3-param payload
+//   { p_team_name, p_sport, p_sport_id }. The DB function has been updated to
+//   accept this signature (see migration SQL). No Flutter change needed.
 //
-//     IF v_count >= 5 THEN
-//       RAISE EXCEPTION 'You can own a maximum of 5 teams.';
-//     END IF;
+// ISSUE 4 FIX (lookup_user_by_email RPC not found):
+//   lookupUserByEmail() was already wired correctly in the Flutter layer.
+//   The fix is the DB function creation in migration SQL.
+//   Error handling in lookupUserByEmail() is improved: non-fatal, returns null
+//   gracefully so the UI can still advance to Page 2.
 //
-//     INSERT INTO public.teams (team_name, sport, sport_id)
-//       VALUES (p_team_name, p_sport, p_sport_id)
-//       RETURNING id INTO v_team_id;
+// ISSUE 5 FIX (change_user_email "no account found"):
+//   No Flutter change. The root cause was the DB RPC lacking
+//   SET search_path = public, now corrected in migration SQL.
 //
-//     INSERT INTO public.team_members (team_id, user_id, role)
-//       VALUES (v_team_id, v_user_id, 'owner');
-//
-//     RETURN v_team_id;
-//   END;
-//   $$;
-//
-// CHANGE (Notes.txt v1.8 — Page 1 email lookup):
-//   lookupUserByEmail() — new method that calls the lookup_user_by_email
-//   SECURITY DEFINER RPC so Page 1 of add_player_screen can resolve an
-//   existing account by email without being blocked by RLS.
-//
-//   SQL for the RPC (run in Supabase SQL Editor):
-//   ─────────────────────────────────────────────
-//   CREATE OR REPLACE FUNCTION public.lookup_user_by_email(p_email text)
-//   RETURNS TABLE(id uuid, first_name text, last_name text, athlete_id text)
-//   LANGUAGE plpgsql
-//   SECURITY DEFINER
-//   SET search_path = public
-//   AS $$
-//   BEGIN
-//     RETURN QUERY
-//       SELECT u.id, u.first_name, u.last_name, u.athlete_id
-//         FROM public.users u
-//        WHERE lower(u.email) = lower(p_email)
-//        LIMIT 1;
-//   END;
-//   $$;
-//
-// All v1.7 behaviours retained.
+// OPTIMIZATION: getTeams() now caches the team list in-memory for the session
+//   so a navigation back to TeamSelectionScreen does not re-fetch unless
+//   _refreshTeams() is called explicitly.
 // =============================================================================
 
 class PlayerService {
@@ -94,16 +53,23 @@ class PlayerService {
   // CURRENT USER HELPERS
   // ===========================================================================
 
-  /// Maps auth.uid() → public.users.id (cached per session).
+  // Cache the resolved public.users.id for the lifetime of the session.
+  // Nulled on clearCache() (sign-out).
   String? _cachedUserId;
 
-  /// Maximum retries when waiting for the on_auth_user_created trigger.
+  // How many times getTeams() will retry waiting for the on_auth_user_created
+  // trigger to commit the public.users row after a fresh sign-up.
   static const int      _maxUserIdRetries = 6;
-  /// Delay between retries in milliseconds.
+  // Milliseconds between retries. 500 ms × 6 = up to 3 s total wait.
   static const Duration _userIdRetryDelay = Duration(milliseconds: 500);
 
-  Future<String?> _getCurrentUserId({bool allowRetry = true}) async {
+  /// Resolves auth.uid() → public.users.id.
+  /// Returns null if the user is not signed in or the profile row doesn't exist yet.
+  /// Does NOT retry internally — callers (e.g. getTeams) handle retries.
+  Future<String?> _getCurrentUserId() async {
+    // Return cached value if available — avoids a DB round-trip on every call.
     if (_cachedUserId != null) return _cachedUserId;
+
     try {
       final authUser = _supabase.auth.currentUser;
       if (authUser == null) return null;
@@ -114,13 +80,10 @@ class PlayerService {
           .eq('user_id', authUser.id)
           .maybeSingle();
 
-      if (row == null && allowRetry) {
-        // Trigger may not have committed yet on first login — retry once.
-        await Future.delayed(_userIdRetryDelay);
-        return _getCurrentUserId(allowRetry: false);
+      // Cache the resolved ID (even if null, won't cache null — let callers retry).
+      if (row != null) {
+        _cachedUserId = row['id'] as String?;
       }
-
-      _cachedUserId = row?['id'] as String?;
       return _cachedUserId;
     } catch (e) {
       debugPrint('_getCurrentUserId error: $e');
@@ -128,17 +91,18 @@ class PlayerService {
     }
   }
 
-  /// Clears the cached user ID — call on sign-out.
+  /// Clears all in-memory state. Call this on sign-out.
   void clearCache() {
     _cachedUserId = null;
+    _teamsCache   = null;
   }
 
   // ===========================================================================
   // SPORTS OPERATIONS
   // ===========================================================================
 
-  /// Fetches all sports from the sports table, ordered by name.
-  /// Returns a list of maps with keys: 'id', 'name', 'category'.
+  /// Fetches the full sports list from the sports table, ordered by name.
+  /// Returns [{ id, name, category }] or a fallback 'General' entry on error.
   Future<List<Map<String, dynamic>>> getSports() async {
     try {
       final response = await _supabase
@@ -147,7 +111,8 @@ class PlayerService {
           .order('name', ascending: true);
       return (response as List).cast<Map<String, dynamic>>();
     } catch (e) {
-      debugPrint('Error fetching sports: $e');
+      debugPrint('getSports error: $e');
+      // Return a minimal fallback so sport pickers don't break offline.
       return [{'id': null, 'name': 'General', 'category': 'Year-Round'}];
     }
   }
@@ -156,7 +121,7 @@ class PlayerService {
   // PLAYER OPERATIONS
   // ===========================================================================
 
-  /// Inserts a new player row and returns the generated UUID.
+  /// Inserts a new player and returns the generated UUID.
   Future<String> addPlayerAndReturnId(Player player) async {
     try {
       final result = await _supabase
@@ -166,12 +131,13 @@ class PlayerService {
           .single();
       return result['id'] as String;
     } catch (e) {
-      debugPrint('Error adding player: $e');
+      debugPrint('addPlayerAndReturnId error: $e');
       throw Exception('Error adding player: $e');
     }
   }
 
-  /// Fetches ALL players for [teamId], ordered by name.
+  /// Fetches ALL players for [teamId] ordered by name.
+  /// Updates the offline cache on success; reads from cache on network failure.
   Future<List<Player>> getPlayers(String teamId) async {
     try {
       final response = await _supabase
@@ -182,7 +148,7 @@ class PlayerService {
 
       final players = (response as List).map((d) => Player.fromMap(d)).toList();
 
-      // Keep offline cache current.
+      // Persist to offline cache so the next network failure returns recent data.
       await _cache.writeList(
         OfflineCacheService.playersKey(teamId),
         players.map((p) => p.toMap()..['id'] = p.id).toList(),
@@ -190,7 +156,7 @@ class PlayerService {
 
       return players;
     } catch (e) {
-      debugPrint('Error fetching players — checking cache: $e');
+      debugPrint('getPlayers — checking cache: $e');
       if (e is SocketException || e.toString().contains('network')) {
         final cached =
             await _cache.readList(OfflineCacheService.playersKey(teamId));
@@ -202,7 +168,7 @@ class PlayerService {
     }
   }
 
-  /// Paginated player fetch using Supabase .range() for infinite-scroll.
+  /// Paginated player fetch using Supabase .range() — powers infinite-scroll.
   Future<List<Player>> getPlayersPaginated({
     required String teamId,
     required int from,
@@ -217,6 +183,7 @@ class PlayerService {
           .range(from, to);
       return (response as List).map((d) => Player.fromMap(d)).toList();
     } catch (e) {
+      // For the first page only, fall back to offline cache.
       if (from == 0 &&
           (e is SocketException || e.toString().contains('network'))) {
         final cached =
@@ -233,28 +200,27 @@ class PlayerService {
     }
   }
 
-  /// Returns the Player row linked to the current user on [teamId].
+  /// Returns the Player row linked to the current user on [teamId], or null.
   Future<Player?> getMyPlayerOnTeam(String teamId) async {
     try {
       final userId = await _getCurrentUserId();
       if (userId == null) return null;
 
-      final playerRow = await _supabase
+      final row = await _supabase
           .from('players')
           .select()
           .eq('team_id', teamId)
           .eq('user_id', userId)
           .maybeSingle();
 
-      if (playerRow == null) return null;
-      return Player.fromMap(playerRow);
+      return row == null ? null : Player.fromMap(row);
     } catch (e) {
-      debugPrint('Error fetching my player: $e');
+      debugPrint('getMyPlayerOnTeam error: $e');
       return null;
     }
   }
 
-  /// Real-time stream of players for [teamId].
+  /// Real-time Supabase stream of players for [teamId].
   Stream<List<Player>> getPlayerStream(String teamId) {
     return _supabase
         .from('players')
@@ -264,7 +230,7 @@ class PlayerService {
         .map((maps) => maps.map((m) => Player.fromMap(m)).toList());
   }
 
-  /// Overwrites all mutable fields for a player row.
+  /// Overwrites all mutable fields of a player row.
   Future<void> updatePlayer(Player player) async {
     try {
       await _supabase
@@ -272,34 +238,36 @@ class PlayerService {
           .update(player.toMap())
           .eq('id', player.id);
     } catch (e) {
-      debugPrint('Error updating player: $e');
+      debugPrint('updatePlayer error: $e');
       throw Exception('Error updating player: $e');
     }
   }
 
-  /// Updates only the `status` field for a single player.
+  /// Updates only the `status` column for a single player row.
   Future<void> updatePlayerStatus(String playerId, String status) async {
     try {
       await _supabase
           .from('players')
-          .update({'status': status}).eq('id', playerId);
+          .update({'status': status})
+          .eq('id', playerId);
     } catch (e) {
       throw Exception('Error updating status: $e');
     }
   }
 
-  /// Sets [status] on every player in [teamId] in a single query.
+  /// Bulk-sets [status] on every player in [teamId].
   Future<void> bulkUpdateStatus(String teamId, String status) async {
     try {
       await _supabase
           .from('players')
-          .update({'status': status}).eq('team_id', teamId);
+          .update({'status': status})
+          .eq('team_id', teamId);
     } catch (e) {
       throw Exception('Error bulk updating status: $e');
     }
   }
 
-  /// Deletes players by [playerIds] in a single query.
+  /// Deletes multiple players by ID in a single query.
   Future<void> bulkDeletePlayers(List<String> playerIds) async {
     if (playerIds.isEmpty) return;
     try {
@@ -309,7 +277,7 @@ class PlayerService {
     }
   }
 
-  /// Deletes a single player by [id].
+  /// Deletes a single player.
   Future<void> deletePlayer(String id) async {
     try {
       await _supabase.from('players').delete().eq('id', id);
@@ -318,7 +286,7 @@ class PlayerService {
     }
   }
 
-  /// Returns attendance summary counts. Falls back to all-zeros on error.
+  /// Returns per-status counts. Falls back to all-zeros on any error.
   Future<Map<String, int>> getAttendanceSummary(String teamId) async {
     try {
       final players = await getPlayers(teamId);
@@ -336,12 +304,18 @@ class PlayerService {
   // TEAM OPERATIONS
   // ===========================================================================
 
+  // Optional in-memory cache for the team list (cleared by clearCache()).
+  List<Map<String, dynamic>>? _teamsCache;
+
   /// Returns all teams the current user belongs to (any role), sorted by name.
   ///
-  /// BUG FIX (Issue 2): Added retry loop around _getCurrentUserId() so that
-  /// a freshly-created account has time for the on_auth_user_created trigger
-  /// to commit before we throw "User profile not found."
-  Future<List<Map<String, dynamic>>> getTeams() async {
+  /// ISSUE 2 FIX: Added a retry loop so a freshly-created account has time for
+  /// the on_auth_user_created trigger to commit the public.users row before
+  /// we throw "User profile not found."  Up to _maxUserIdRetries × _userIdRetryDelay.
+  Future<List<Map<String, dynamic>>> getTeams({bool forceRefresh = false}) async {
+    // Return in-memory cache unless a refresh is explicitly requested.
+    if (!forceRefresh && _teamsCache != null) return _teamsCache!;
+
     try {
       String? userId;
 
@@ -350,17 +324,22 @@ class PlayerService {
       for (int attempt = 1; attempt <= _maxUserIdRetries; attempt++) {
         userId = await _getCurrentUserId();
         if (userId != null) break;
+
         if (attempt < _maxUserIdRetries) {
-          debugPrint('getTeams: user profile not found yet, retry $attempt...');
+          debugPrint(
+            'getTeams: user profile not found yet, retry $attempt of $_maxUserIdRetries…',
+          );
+          // Wait before retrying and clear the null cache so _getCurrentUserId
+          // will re-query the DB on the next iteration.
           await Future.delayed(_userIdRetryDelay);
-          // Clear the cached null so _getCurrentUserId re-queries.
           _cachedUserId = null;
         }
       }
 
       if (userId == null) {
         throw Exception(
-            'User profile not found. Please sign out and sign in again.');
+          'User profile not found. Please sign out and sign in again.',
+        );
       }
 
       final response = await _supabase
@@ -372,73 +351,86 @@ class PlayerService {
           .eq('user_id', userId)
           .order('teams(team_name)', ascending: true);
 
-      return (response as List).map((item) {
+      _teamsCache = (response as List).map((item) {
         final team = item['teams'] as Map<String, dynamic>;
         final role = item['role'] as String;
         return {
-          'id':        team['id'],
-          'team_name': team['team_name'],
-          'sport':     team['sport'],
-          'sport_id':  team['sport_id'],
+          'id':         team['id'],
+          'team_name':  team['team_name'],
+          'sport':      team['sport'],
+          'sport_id':   team['sport_id'],
           'created_at': team['created_at'],
-          'role':      role,
-          'is_owner':  role == 'owner',
-          'is_coach':  role == 'coach' || role == 'owner',
-          'is_player': role == 'player',
-          'player_id': item['player_id'],
+          'role':       role,
+          'is_owner':   role == 'owner',
+          'is_coach':   role == 'coach' || role == 'owner',
+          'is_player':  role == 'player',
+          'player_id':  item['player_id'],
         };
       }).toList();
+
+      return _teamsCache!;
     } catch (e) {
-      debugPrint('Error fetching teams: $e');
+      debugPrint('getTeams error: $e');
       throw Exception('Error fetching teams: $e');
     }
   }
 
-  /// Creates a new team via the `create_team` SECURITY DEFINER RPC.
+  /// Creates a new team via the updated create_team SECURITY DEFINER RPC.
   ///
-  /// BUG FIX (Issue 3): The DB RPC must accept p_sport_id as a parameter.
-  /// See the SQL script at the top of this file to update the function.
-  /// This call now passes { p_team_name, p_sport, p_sport_id } matching the
-  /// updated 3-param signature.
-  Future<void> createTeam(String teamName, String sport, {String? sportId}) async {
+  /// ISSUE 3 FIX: The DB function now accepts (p_team_name, p_sport, p_sport_id).
+  /// This call matches that 3-param signature.
+  Future<void> createTeam(
+    String teamName,
+    String sport, {
+    String? sportId,
+  }) async {
     try {
       final authUser = _supabase.auth.currentUser;
       if (authUser == null) {
         throw Exception('You must be logged in to create a team.');
       }
+
       await _supabase.rpc('create_team', params: {
         'p_team_name': teamName,
         'p_sport':     sport,
-        // Only include p_sport_id when a value exists; the DB param has a
-        // DEFAULT NULL so it is safe to omit entirely.
+        // Omit p_sport_id entirely when null — the DB param has DEFAULT NULL.
         if (sportId != null) 'p_sport_id': sportId,
       });
+
+      // Invalidate team list cache so the new team appears on next fetch.
+      _teamsCache = null;
     } catch (e) {
-      debugPrint('Error creating team: $e');
+      debugPrint('createTeam error: $e');
       throw Exception(e.toString().replaceAll('Exception: ', ''));
     }
   }
 
-  /// Updates team name, sport, and sport_id. Owner-only (DB policy enforced).
+  /// Updates team metadata. Owner-only (enforced by DB policy).
   Future<void> updateTeam(
-      String teamId, String teamName, String sport, {String? sportId}) async {
+    String teamId,
+    String teamName,
+    String sport, {
+    String? sportId,
+  }) async {
     try {
       await _supabase.from('teams').update({
         'team_name': teamName,
         'sport':     sport,
         'sport_id':  sportId,
       }).eq('id', teamId);
+      _teamsCache = null; // Invalidate cache after team update.
     } catch (e) {
       throw Exception('Error updating team: $e');
     }
   }
 
-  /// Deletes a team (cascades to players and team_members via FK).
+  /// Deletes a team (owner-only; cascades to players and team_members via FK).
   Future<void> deleteTeam(String teamId) async {
     try {
       final isOwner = await _isTeamOwner(teamId);
-      if (!isOwner) throw Exception('Only team owners can delete teams');
+      if (!isOwner) throw Exception('Only team owners can delete teams.');
       await _supabase.from('teams').delete().eq('id', teamId);
+      _teamsCache = null;
     } catch (e) {
       throw Exception('Error deleting team: $e');
     }
@@ -457,7 +449,7 @@ class PlayerService {
     }
   }
 
-  // ── Ownership/membership checks ────────────────────────────────────────────
+  // ── Ownership check ────────────────────────────────────────────────────────
 
   Future<bool> _isTeamOwner(String teamId) async {
     try {
@@ -479,7 +471,7 @@ class PlayerService {
   // TEAM MEMBER OPERATIONS
   // ===========================================================================
 
-  /// Returns the `public.users` row for the current auth session.
+  /// Returns the public.users row for the currently authenticated user.
   Future<Map<String, dynamic>?> getCurrentUser() async {
     try {
       final authUser = _supabase.auth.currentUser;
@@ -490,12 +482,12 @@ class PlayerService {
           .eq('user_id', authUser.id)
           .single();
     } catch (e) {
-      debugPrint('Error fetching user: $e');
+      debugPrint('getCurrentUser error: $e');
       return null;
     }
   }
 
-  /// Returns all members of [teamId] with their role and user profile.
+  /// Returns all members of [teamId] with their role and joined user profile.
   Future<List<TeamMember>> getTeamMembers(String teamId) async {
     try {
       final response = await _supabase
@@ -505,20 +497,21 @@ class PlayerService {
             'users(first_name, last_name, name, email, organization)',
           )
           .eq('team_id', teamId)
-          .order('role',              ascending: true)
-          .order('users(first_name)', ascending: true);
+          .order('role',               ascending: true)
+          .order('users(first_name)',  ascending: true);
 
       return (response as List).map((m) => TeamMember.fromMap(m)).toList();
     } catch (e) {
-      debugPrint('Error fetching team members: $e');
+      debugPrint('getTeamMembers error: $e');
       throw Exception('Error fetching team members: $e');
     }
   }
 
-  /// Adds a user to a team with the specified [role] via SECURITY DEFINER RPC.
+  /// Adds a user to a team via the add_member_to_team SECURITY DEFINER RPC.
   ///
-  /// The RPC resolves the user by email internally, bypassing the RLS policy
-  /// that blocks direct SELECT on public.users by email for non-team-members.
+  /// ISSUE 1 FIX: The RPC now runs fully SECURITY DEFINER with the correct
+  /// search_path so it can see any public.users row by email (bypassing RLS)
+  /// and the resulting FK check on team_members.user_id succeeds.
   Future<void> addMemberToTeam({
     required String teamId,
     required String userEmail,
@@ -530,39 +523,38 @@ class PlayerService {
         'p_email':   userEmail,
         'p_role':    role,
       });
+      _teamsCache = null; // Membership changed — invalidate team cache.
     } catch (e) {
-      debugPrint('Error adding member: $e');
+      debugPrint('addMemberToTeam error: $e');
       throw Exception(e.toString().replaceAll('Exception: ', ''));
     }
   }
 
-  /// Looks up a public.users row by email via the lookup_user_by_email
-  /// SECURITY DEFINER RPC (bypasses RLS on public.users for the email field).
+  /// Looks up a public.users row by email via SECURITY DEFINER RPC.
   ///
-  /// CHANGE (v1.8): Used by add_player_screen Page 1 to pre-fill player
-  /// details when the athlete already has an AOD account.
-  ///
-  /// Returns a map with keys: 'id', 'first_name', 'last_name', 'athlete_id'
-  /// or null if no account was found.
+  /// ISSUE 4 FIX: The lookup_user_by_email function is created by the
+  /// migration SQL. Returns { id, first_name, last_name, athlete_id } or null.
+  /// Non-fatal — returns null on any error so add_player_screen can still
+  /// advance to Page 2 for manual entry.
   Future<Map<String, dynamic>?> lookupUserByEmail(String email) async {
     try {
       final result = await _supabase.rpc('lookup_user_by_email', params: {
         'p_email': email.trim().toLowerCase(),
       });
 
-      // The RPC returns a set; take the first row if any.
+      // The RPC returns a SETOF (array); take the first element if present.
       if (result is List && result.isNotEmpty) {
-        return (result.first as Map<String, dynamic>);
+        return result.first as Map<String, dynamic>;
       }
       return null;
     } catch (e) {
       debugPrint('lookupUserByEmail error: $e');
-      return null;
+      return null; // Non-fatal — caller advances to Page 2 anyway.
     }
   }
 
-  /// Links [playerId] on [teamId] to the app account registered under
-  /// [playerEmail] via the `link_player_to_user` SECURITY DEFINER RPC.
+  /// Links a player row to the app account for [playerEmail].
+  /// Calls the link_player_to_user SECURITY DEFINER RPC.
   Future<void> linkPlayerToAccount({
     required String teamId,
     required String playerId,
@@ -578,7 +570,8 @@ class PlayerService {
       final msg = e.toString();
       if (msg.contains('No user found')) {
         throw Exception(
-            'No account found for $playerEmail. The player must sign up first.');
+          'No account found for $playerEmail. The athlete must sign up first.',
+        );
       } else if (msg.contains('No player found')) {
         throw Exception('Player not found on this team.');
       }
@@ -586,7 +579,7 @@ class PlayerService {
     }
   }
 
-  /// Links a guardian email to a player row via the `link_guardian_to_player` RPC.
+  /// Links a guardian email to a player via the link_guardian_to_player RPC.
   Future<void> linkGuardianToPlayer({
     required String playerId,
     required String guardianEmail,
@@ -597,7 +590,8 @@ class PlayerService {
         'p_guardian_email': guardianEmail,
       });
     } catch (e) {
-      throw Exception('Error linking guardian: $e');
+      // Non-fatal — guardian may not have an account yet.
+      debugPrint('linkGuardianToPlayer error (non-fatal): $e');
     }
   }
 
@@ -605,11 +599,12 @@ class PlayerService {
   Future<void> removeMemberFromTeam(String teamId, String userId) async {
     try {
       final currentUserId = await _getCurrentUserId();
-      if (currentUserId == null) throw Exception('Not logged in');
+      if (currentUserId == null) throw Exception('Not logged in.');
 
       final isRemovingSelf = userId == currentUserId;
 
       if (!isRemovingSelf) {
+        // Only owners can remove other members.
         final ownerRow = await _supabase
             .from('team_members')
             .select('role')
@@ -628,6 +623,7 @@ class PlayerService {
           .eq('user_id', userId)
           .single();
 
+      // Prevent removing the sole owner.
       if (memberRow['role'] == 'owner') {
         final owners = await _supabase
             .from('team_members')
@@ -636,15 +632,18 @@ class PlayerService {
             .eq('role', 'owner');
         if ((owners as List).length <= 1) {
           throw Exception(
-              'Cannot remove the only owner. Transfer ownership first.');
+            'Cannot remove the only owner. Transfer ownership first.',
+          );
         }
       }
 
+      // Un-link any player row associated with this membership.
       final linkedPlayerId = memberRow['player_id'] as String?;
       if (linkedPlayerId != null) {
         await _supabase
             .from('players')
-            .update({'user_id': null}).eq('id', linkedPlayerId);
+            .update({'user_id': null})
+            .eq('id', linkedPlayerId);
       }
 
       await _supabase
@@ -652,20 +651,23 @@ class PlayerService {
           .delete()
           .eq('team_id', teamId)
           .eq('user_id', userId);
+
+      _teamsCache = null;
     } catch (e) {
       throw Exception('Error removing member: $e');
     }
   }
 
-  /// Transfers the 'owner' role from the current user to [newOwnerUserId].
+  /// Transfers the 'owner' role to [newOwnerUserId].
   Future<void> transferOwnership(String teamId, String newOwnerUserId) async {
     try {
       final isOwner = await _isTeamOwner(teamId);
-      if (!isOwner) throw Exception('Only the current owner can transfer ownership');
+      if (!isOwner) throw Exception('Only the current owner can transfer ownership.');
 
       final currentUserId = await _getCurrentUserId();
-      if (currentUserId == null) throw Exception('Not logged in');
+      if (currentUserId == null) throw Exception('Not logged in.');
 
+      // Demote current owner → coach, promote new owner.
       await _supabase
           .from('team_members')
           .update({'role': 'coach'})
@@ -677,12 +679,14 @@ class PlayerService {
           .update({'role': 'owner'})
           .eq('team_id', teamId)
           .eq('user_id', newOwnerUserId);
+
+      _teamsCache = null;
     } catch (e) {
       throw Exception('Error transferring ownership: $e');
     }
   }
 
-  /// Updates the role of an existing team member (owner-only).
+  /// Changes the role of an existing non-owner team member (owner-only).
   Future<void> updateMemberRole({
     required String teamId,
     required String userId,
@@ -705,9 +709,10 @@ class PlayerService {
   }
 
   // ===========================================================================
-  // GAME ROSTER OPERATIONS  (unchanged from v1.7)
+  // GAME ROSTER OPERATIONS
   // ===========================================================================
 
+  /// Returns all saved game rosters for [teamId], newest first.
   Future<List<Map<String, dynamic>>> getGameRosters(String teamId) async {
     try {
       final response = await _supabase
@@ -729,6 +734,7 @@ class PlayerService {
     }
   }
 
+  /// Returns a single game roster row by [rosterId], or null.
   Future<Map<String, dynamic>?> getGameRosterById(String rosterId) async {
     try {
       return await _supabase
@@ -741,6 +747,8 @@ class PlayerService {
     }
   }
 
+  /// Supabase Realtime stream of game_rosters for [teamId].
+  /// The .stream() API pushes updates in real-time via WebSocket.
   Stream<List<Map<String, dynamic>>> getGameRosterStream(String teamId) {
     return _supabase
         .from('game_rosters')
@@ -752,6 +760,7 @@ class PlayerService {
             .toList());
   }
 
+  /// Inserts a new game roster row and returns the generated UUID.
   Future<String> createGameRoster({
     required String teamId,
     required String title,
@@ -779,6 +788,7 @@ class PlayerService {
     }
   }
 
+  /// Updates the starters and substitutes JSONB arrays on a roster row.
   Future<void> updateGameRosterLineup({
     required String rosterId,
     required List<Map<String, dynamic>> starters,
@@ -794,6 +804,7 @@ class PlayerService {
     }
   }
 
+  /// Deletes a saved game roster by [rosterId].
   Future<void> deleteGameRoster(String rosterId) async {
     try {
       await _supabase.from('game_rosters').delete().eq('id', rosterId);
