@@ -37,6 +37,33 @@
   },
   {
     "schemaname": "public",
+    "tablename": "guardian_links",
+    "policyname": "guardian_links_delete",
+    "roles": "{authenticated}",
+    "operation": "DELETE",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM players p\n  WHERE ((p.id = guardian_links.player_id) AND (EXISTS ( SELECT 1\n           FROM team_members tm\n          WHERE ((tm.team_id = p.team_id) AND (tm.user_id = ( SELECT users.id\n                   FROM users\n                  WHERE (users.user_id = auth.uid()))) AND (tm.role = 'owner'::text)))))))",
+    "check_expression": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "guardian_links",
+    "policyname": "guardian_links_insert",
+    "roles": "{authenticated}",
+    "operation": "INSERT",
+    "using_expression": null,
+    "check_expression": "(EXISTS ( SELECT 1\n   FROM players p\n  WHERE ((p.id = guardian_links.player_id) AND (EXISTS ( SELECT 1\n           FROM team_members tm\n          WHERE ((tm.team_id = p.team_id) AND (tm.user_id = ( SELECT users.id\n                   FROM users\n                  WHERE (users.user_id = auth.uid()))) AND (tm.role = ANY (ARRAY['owner'::text, 'coach'::text]))))))))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "guardian_links",
+    "policyname": "guardian_links_select",
+    "roles": "{authenticated}",
+    "operation": "SELECT",
+    "using_expression": "((user_id = ( SELECT users.id\n   FROM users\n  WHERE (users.user_id = auth.uid()))) OR (EXISTS ( SELECT 1\n   FROM players p\n  WHERE ((p.id = guardian_links.player_id) AND (EXISTS ( SELECT 1\n           FROM team_members tm\n          WHERE ((tm.team_id = p.team_id) AND (tm.user_id = ( SELECT users.id\n                   FROM users\n                  WHERE (users.user_id = auth.uid()))))))))))",
+    "check_expression": null
+  },
+  {
+    "schemaname": "public",
     "tablename": "players",
     "policyname": "players_delete",
     "roles": "{authenticated}",
@@ -70,6 +97,15 @@
     "operation": "UPDATE",
     "using_expression": "((( SELECT get_team_role(players.team_id) AS get_team_role) = ANY (ARRAY['owner'::text, 'coach'::text])) OR (user_id = ( SELECT get_current_user_id() AS get_current_user_id)))",
     "check_expression": "((( SELECT get_team_role(players.team_id) AS get_team_role) = ANY (ARRAY['owner'::text, 'coach'::text])) OR (user_id = ( SELECT get_current_user_id() AS get_current_user_id)))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "sports",
+    "policyname": "sports_select_all",
+    "roles": "{authenticated}",
+    "operation": "SELECT",
+    "using_expression": "true",
+    "check_expression": null
   },
   {
     "schemaname": "public",
