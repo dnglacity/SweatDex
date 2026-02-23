@@ -10,3 +10,12 @@ Index on players.athlete_email and players.guardian_email — the new change_use
 CREATE INDEX IF NOT EXISTS idx_players_athlete_email  ON public.players (lower(athlete_email));
 CREATE INDEX IF NOT EXISTS idx_players_guardian_email ON public.players (lower(guardian_email));
 
+
+
+AOD v1.7
+Review supabase_blueprint.json and supabase_policies.json.
+
+
+
+Identify and execute optimization and performance edits.
+
