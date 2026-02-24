@@ -35,10 +35,18 @@ AI Review Context: ApexOnDeck
     
 4. Known Issues & "Don't Touch" Areas
 
-    Known Bugs: None.
+    Known Bugs: 
+    
+    Issue 1:
+    getTeams error: PostgrestException(message: {"code":"42P17","details":null,"hint":null,"message":"infinite
+recursion detected in policy for relation \"team_members\""}, code: 500, details: , hint: null)
 
     Technical Debt: None.
 
 5. Coding Standards
 
     Note an explain each element of the code or script.
+
+6. Questions
+
+    

@@ -19,6 +19,33 @@
   },
   {
     "schemaname": "public",
+    "tablename": "team_members",
+    "policyname": "team_members_delete_self_owner",
+    "roles": "{authenticated}",
+    "operation": "DELETE",
+    "using_expression": "((user_id = ( SELECT private.get_my_user_id() AS get_my_user_id)) OR ( SELECT is_team_owner(team_members.team_id) AS is_team_owner))",
+    "check_expression": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "team_members",
+    "policyname": "team_members_select_own_teams",
+    "roles": "{authenticated}",
+    "operation": "SELECT",
+    "using_expression": "(team_id IN ( SELECT team_members_1.team_id\n   FROM team_members team_members_1\n  WHERE (team_members_1.user_id = ( SELECT private.get_my_user_id() AS get_my_user_id))))",
+    "check_expression": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "team_members",
+    "policyname": "team_members_update_owner",
+    "roles": "{authenticated}",
+    "operation": "UPDATE",
+    "using_expression": "((user_id = ( SELECT private.get_my_user_id() AS get_my_user_id)) OR ( SELECT is_team_owner(team_members.team_id) AS is_team_owner))",
+    "check_expression": null
+  },
+  {
+    "schemaname": "public",
     "tablename": "teams",
     "policyname": "teams_select_member",
     "roles": "{authenticated}",

@@ -15,6 +15,13 @@
   },
   {
     "schema_name": "public",
+    "function_name": "change_user_email",
+    "arguments": "p_old_email text, p_new_email text",
+    "return_type": "void",
+    "security_type": "Security Definer"
+  },
+  {
+    "schema_name": "public",
     "function_name": "create_team",
     "arguments": "p_team_name text, p_sport text DEFAULT 'General'::text, p_sport_id uuid DEFAULT NULL::uuid",
     "return_type": "uuid",
