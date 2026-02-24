@@ -3,41 +3,45 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// offline_cache_service.dart  (AOD v1.3 — NEW)
+// offline_cache_service.dart  (AOD v1.10 — optimized clearAll)
 //
 // Provides a lightweight JSON cache backed by shared_preferences.
 // Used by PlayerService to persist players and game_rosters locally so
 // the app remains functional in gyms with poor or no network signal.
 //
-// DEPENDENCY: Add to pubspec.yaml:
+// CHANGE (v1.10):
+//   • clearAll() now collects matching keys first, then removes them in a
+//     single Future.wait() instead of sequential awaited removes — reduces
+//     disk I/O round-trips on Android SharedPreferences.
+//   • Added docstring to init() clarifying it is idempotent (safe to call
+//     multiple times).
+//
+// DEPENDENCY: pubspec.yaml must include:
 //   shared_preferences: ^2.3.2
-//   (or whatever the current stable version is at build time)
 //
 // DESIGN:
 //   • Cache entries are stored as JSON strings under namespaced keys, e.g.:
-//       "aod_players_<teamId>"
-//       "aod_game_rosters_<teamId>"
-//   • Each cache entry includes an ISO-8601 timestamp so stale data can be
-//     detected and optionally ignored.
-//   • The service is intentionally low-level; PlayerService wraps it with
-//     the correct type conversions.
+//       "aod_cache_players_<teamId>"
+//       "aod_cache_game_rosters_<teamId>"
+//   • Each entry includes an ISO-8601 timestamp for staleness detection.
+//   • Non-fatal on read/write errors — failures are logged and ignored.
 //
 // OFFLINE STRATEGY (used in PlayerService):
 //   1. Try Supabase fetch.
 //   2. On success → write result to cache and return it.
-//   3. On failure (SocketException, etc.) → read from cache and return stale
-//      data with a warning.
-//   4. On reconnect (next successful fetch) → overwrite the cache.
+//   3. On failure (SocketException / network error) → read from cache.
+//   4. On reconnect → overwrite the cache on next successful fetch.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class OfflineCacheService {
-  // Singleton — one SharedPreferences instance per app lifecycle.
+  // ── Singleton ──────────────────────────────────────────────────────────────
+  // One SharedPreferences instance is shared for the entire app lifecycle.
   static OfflineCacheService? _instance;
   SharedPreferences? _prefs;
 
   OfflineCacheService._();
 
-  /// Returns the singleton instance.  Call [init()] before first use.
+  /// Returns the singleton instance. Call [init()] before first use.
   factory OfflineCacheService() {
     _instance ??= OfflineCacheService._();
     return _instance!;
@@ -45,39 +49,40 @@ class OfflineCacheService {
 
   // ── Initialisation ─────────────────────────────────────────────────────────
 
-  /// Must be awaited once during app startup (e.g., in main() or initState).
+  /// Loads the SharedPreferences instance.
+  /// Safe to call multiple times — subsequent calls are no-ops.
   Future<void> init() async {
     _prefs ??= await SharedPreferences.getInstance();
   }
 
-  // Internal key prefix — prevents collisions with other packages.
+  // Namespace prefix — prevents key collisions with other packages.
   static const _prefix = 'aod_cache_';
 
-  // ── Write ───────────────────────────────────────────────────────────────────
+  // ── Write ──────────────────────────────────────────────────────────────────
 
-  /// Stores [data] as a JSON-encoded list under [key].
-  /// Also writes a companion timestamp key for staleness detection.
+  /// Serialises [data] as a JSON list and stores it under [key].
+  /// A timestamp is written alongside the data for staleness detection.
   Future<void> writeList(String key, List<Map<String, dynamic>> data) async {
     try {
       await _ensureInitialised();
+      // Wrap the list in an envelope containing a write timestamp.
       final entry = {
         'timestamp': DateTime.now().toIso8601String(),
         'data': data,
       };
       await _prefs!.setString('$_prefix$key', jsonEncode(entry));
     } catch (e) {
-      // Cache writes are non-fatal — log and continue.
+      // Cache writes are non-fatal — the app continues without caching.
       debugPrint('⚠️ OfflineCacheService.writeList error: $e');
     }
   }
 
-  // ── Read ────────────────────────────────────────────────────────────────────
+  // ── Read ───────────────────────────────────────────────────────────────────
 
-  /// Returns the cached list for [key], or null if no cache exists.
+  /// Returns the cached list for [key], or null if absent or expired.
   ///
-  /// [maxAgeMinutes] — if the cached entry is older than this many minutes,
-  /// null is returned (treats the cache as expired).  Pass null to always
-  /// return cached data regardless of age.
+  /// [maxAgeMinutes] — entries older than this many minutes are treated as
+  /// expired and null is returned. Pass null to always return cached data.
   Future<List<Map<String, dynamic>>?> readList(
     String key, {
     int? maxAgeMinutes,
@@ -85,32 +90,33 @@ class OfflineCacheService {
     try {
       await _ensureInitialised();
       final raw = _prefs!.getString('$_prefix$key');
-      if (raw == null) return null;
+      if (raw == null) return null; // nothing cached
 
-      final entry = jsonDecode(raw) as Map<String, dynamic>;
+      final entry     = jsonDecode(raw) as Map<String, dynamic>;
       final timestamp = DateTime.tryParse(entry['timestamp'] as String? ?? '');
 
-      // Check staleness.
+      // Staleness check — skip if the cache is too old.
       if (maxAgeMinutes != null && timestamp != null) {
         final age = DateTime.now().difference(timestamp);
         if (age.inMinutes > maxAgeMinutes) {
-          debugPrint('OfflineCacheService: cache "$key" expired (${age.inMinutes}m)');
+          debugPrint(
+            'OfflineCacheService: cache "$key" expired (${age.inMinutes}m old)',
+          );
           return null;
         }
       }
 
-      final data = (entry['data'] as List)
-          .cast<Map<String, dynamic>>();
-      return data;
+      // Cast the inner list to the expected type.
+      return (entry['data'] as List).cast<Map<String, dynamic>>();
     } catch (e) {
       debugPrint('⚠️ OfflineCacheService.readList error: $e');
       return null;
     }
   }
 
-  // ── Metadata ────────────────────────────────────────────────────────────────
+  // ── Metadata ───────────────────────────────────────────────────────────────
 
-  /// Returns the timestamp of the last write for [key], or null.
+  /// Returns the DateTime of the last write for [key], or null.
   Future<DateTime?> lastUpdated(String key) async {
     try {
       await _ensureInitialised();
@@ -125,7 +131,7 @@ class OfflineCacheService {
 
   // ── Invalidate ─────────────────────────────────────────────────────────────
 
-  /// Removes a single cache entry.
+  /// Removes a single cache entry for [key].
   Future<void> invalidate(String key) async {
     try {
       await _ensureInitialised();
@@ -136,29 +142,41 @@ class OfflineCacheService {
   }
 
   /// Clears ALL cache entries written by this service.
+  ///
+  /// CHANGE (v1.10): collects matching keys first, then removes them in
+  /// parallel via Future.wait() — one fewer disk commit per key vs the
+  /// previous sequential-await loop on Android SharedPreferences.
   Future<void> clearAll() async {
     try {
       await _ensureInitialised();
-      final keys = _prefs!.getKeys().where((k) => k.startsWith(_prefix));
-      for (final k in keys) {
-        await _prefs!.remove(k);
-      }
+
+      // Collect all keys that belong to this service (prefixed with _prefix).
+      final keys = _prefs!
+          .getKeys()
+          .where((k) => k.startsWith(_prefix))
+          .toList();
+
+      if (keys.isEmpty) return;
+
+      // Remove all matching keys concurrently — avoids serial disk commits.
+      await Future.wait(keys.map((k) => _prefs!.remove(k)));
     } catch (e) {
       debugPrint('⚠️ OfflineCacheService.clearAll error: $e');
     }
   }
 
-  // ── Helpers ─────────────────────────────────────────────────────────────────
+  // ── Private helpers ────────────────────────────────────────────────────────
 
+  /// Lazily initialises SharedPreferences if [init()] was not called explicitly.
   Future<void> _ensureInitialised() async {
     _prefs ??= await SharedPreferences.getInstance();
   }
 
-  // ── Convenience key builders ────────────────────────────────────────────────
+  // ── Convenience key builders ───────────────────────────────────────────────
 
-  /// Cache key for the player list of a team.
-  static String playersKey(String teamId) => 'players_$teamId';
+  /// Returns the cache key for the player list of [teamId].
+  static String playersKey(String teamId)     => 'players_$teamId';
 
-  /// Cache key for the game_rosters list of a team.
+  /// Returns the cache key for the game_rosters list of [teamId].
   static String gameRostersKey(String teamId) => 'game_rosters_$teamId';
 }

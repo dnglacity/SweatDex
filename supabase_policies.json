@@ -1,11 +1,101 @@
 [
   {
     "schemaname": "public",
+    "tablename": "game_rosters",
+    "policyname": "game_rosters_delete_creator_owner",
+    "roles": "{authenticated}",
+    "operation": "DELETE",
+    "using_expression": "((created_by = private.get_my_user_id()) OR is_team_owner(team_id))",
+    "check_expression": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "game_rosters",
+    "policyname": "game_rosters_insert_member",
+    "roles": "{authenticated}",
+    "operation": "INSERT",
+    "using_expression": null,
+    "check_expression": "is_team_member(team_id)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "game_rosters",
+    "policyname": "game_rosters_select_member",
+    "roles": "{authenticated}",
+    "operation": "SELECT",
+    "using_expression": "(team_id IN ( SELECT private.get_my_team_ids() AS get_my_team_ids))",
+    "check_expression": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "game_rosters",
+    "policyname": "game_rosters_update_member",
+    "roles": "{authenticated}",
+    "operation": "UPDATE",
+    "using_expression": "(team_id IN ( SELECT private.get_my_team_ids() AS get_my_team_ids))",
+    "check_expression": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "guardian_links",
+    "policyname": "guardian_links_delete_own",
+    "roles": "{authenticated}",
+    "operation": "DELETE",
+    "using_expression": "(user_id = private.get_my_user_id())",
+    "check_expression": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "guardian_links",
+    "policyname": "guardian_links_insert_authenticated",
+    "roles": "{authenticated}",
+    "operation": "INSERT",
+    "using_expression": null,
+    "check_expression": "(user_id = private.get_my_user_id())"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "guardian_links",
+    "policyname": "guardian_links_select_own",
+    "roles": "{authenticated}",
+    "operation": "SELECT",
+    "using_expression": "((user_id = private.get_my_user_id()) OR (player_id IN ( SELECT players.id\n   FROM players\n  WHERE (players.user_id = private.get_my_user_id()))))",
+    "check_expression": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "players",
+    "policyname": "players_delete_coach",
+    "roles": "{authenticated}",
+    "operation": "DELETE",
+    "using_expression": "is_team_member(team_id)",
+    "check_expression": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "players",
+    "policyname": "players_insert_coach",
+    "roles": "{authenticated}",
+    "operation": "INSERT",
+    "using_expression": null,
+    "check_expression": "is_team_member(team_id)"
+  },
+  {
+    "schemaname": "public",
     "tablename": "players",
     "policyname": "players_select_member",
     "roles": "{authenticated}",
     "operation": "SELECT",
-    "using_expression": "(team_id IN ( SELECT team_members.team_id\n   FROM team_members\n  WHERE (team_members.user_id = private.get_my_user_id())))",
+    "using_expression": "(team_id IN ( SELECT private.get_my_team_ids() AS get_my_team_ids))",
+    "check_expression": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "players",
+    "policyname": "players_update_member",
+    "roles": "{authenticated}",
+    "operation": "UPDATE",
+    "using_expression": "(team_id IN ( SELECT private.get_my_team_ids() AS get_my_team_ids))",
     "check_expression": null
   },
   {
@@ -32,7 +122,7 @@
     "policyname": "team_members_select_own_teams",
     "roles": "{authenticated}",
     "operation": "SELECT",
-    "using_expression": "(team_id IN ( SELECT team_members_1.team_id\n   FROM team_members team_members_1\n  WHERE (team_members_1.user_id = ( SELECT private.get_my_user_id() AS get_my_user_id))))",
+    "using_expression": "(team_id IN ( SELECT private.get_my_team_ids() AS get_my_team_ids))",
     "check_expression": null
   },
   {
@@ -50,7 +140,7 @@
     "policyname": "teams_select_member",
     "roles": "{authenticated}",
     "operation": "SELECT",
-    "using_expression": "(id IN ( SELECT team_members.team_id\n   FROM team_members\n  WHERE (team_members.user_id = private.get_my_user_id())))",
+    "using_expression": "(id IN ( SELECT private.get_my_team_ids() AS get_my_team_ids))",
     "check_expression": null
   },
   {

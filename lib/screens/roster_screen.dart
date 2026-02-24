@@ -458,7 +458,16 @@ class _RosterScreenState extends State<RosterScreen> {
         ),
       ),
     );
+    // In _showEditTeamInline(), replace the block after showDialog returns:
 
+    // Capture values NOW, before the deferred dispose fires on the next frame.
+    // This is the same pattern used in manage_members_screen.dart to avoid
+    // reading a disposed controller after the animation completes.
+    final capturedName  = nameController.text.trim();
+    final capturedSport = selectedSportName; // already a local String, safe
+
+    // Defer disposal so Flutter's dialog close animation can finish
+    // detaching the TextFormField before the controller is destroyed.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       nameController.dispose();
       sportSearchController.dispose();
@@ -468,13 +477,13 @@ class _RosterScreenState extends State<RosterScreen> {
       try {
         await _playerService.updateTeam(
           widget.teamId,
-          nameController.text.trim(),
-          selectedSportName,
+          capturedName,       // use captured value, not nameController.text
+          capturedSport,
           sportId: selectedSportId,
         );
         setState(() {
-          _teamName = nameController.text.trim();
-          _sport = selectedSportName;
+          _teamName = capturedName;
+          _sport    = capturedSport;
         });
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -483,12 +492,12 @@ class _RosterScreenState extends State<RosterScreen> {
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text('Error: $e'), backgroundColor: Colors.red),
+            SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
           );
         }
       }
     }
+    
   }
 
   // ── Overflow menu ─────────────────────────────────────────────────────────

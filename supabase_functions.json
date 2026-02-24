@@ -1,6 +1,13 @@
 [
   {
     "schema_name": "private",
+    "function_name": "get_my_team_ids",
+    "arguments": "",
+    "return_type": "uuid",
+    "security_type": "Security Definer"
+  },
+  {
+    "schema_name": "private",
     "function_name": "get_my_user_id",
     "arguments": "",
     "return_type": "uuid",

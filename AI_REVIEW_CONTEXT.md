@@ -38,8 +38,11 @@ AI Review Context: ApexOnDeck
     Known Bugs: 
     
     Issue 1:
-    getTeams error: PostgrestException(message: {"code":"42P17","details":null,"hint":null,"message":"infinite
-recursion detected in policy for relation \"team_members\""}, code: 500, details: , hint: null)
+    lookupUserByEmail error: PostgrestException(message: Could not find the function
+public.lookup_user_by_email(p_email) in the schema cache, code: PGRST202, details: Searched for the function 
+public.lookup_user_by_email with parameter p_email or with a single unnamed json/jsonb parameter, but no     
+matches were found in the schema cache., hint: Perhaps you meant to call the function
+public.change_user_email)
 
     Technical Debt: None.
 
