@@ -1,6 +1,0 @@
-#Issue 1:
-Created team does not appear on team_selection_screen.
-
-#Issue 2:
-Attempted to change user email;
-Database update failed: PostgrestException(message: Could not find the function public.change_user_email(p_new_email, p_old_email) in the schema cache, code: PGRST202, details: Searched for the function public.change_user_email with parameters p_new_email, p_old_email or with a single unnamed json/jsonb parameter, but no matches were found in the schema cache., hint: null)
