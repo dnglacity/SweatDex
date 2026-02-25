@@ -53,7 +53,7 @@
     "function_name": "fn_link_new_user_to_existing_player",
     "arguments": "",
     "return_type": "trigger",
-    "security_type": "Security Invoker"
+    "security_type": "Security Definer"
   },
   {
     "schema_name": "public",
@@ -99,6 +99,13 @@
   },
   {
     "schema_name": "public",
+    "function_name": "lookup_user_by_email",
+    "arguments": "p_email text",
+    "return_type": "record",
+    "security_type": "Security Definer"
+  },
+  {
+    "schema_name": "public",
     "function_name": "set_player_user_id_v1_5",
     "arguments": "",
     "return_type": "trigger",
@@ -116,6 +123,13 @@
     "function_name": "sync_user_name",
     "arguments": "",
     "return_type": "trigger",
-    "security_type": "Security Invoker"
+    "security_type": "Security Definer"
+  },
+  {
+    "schema_name": "public",
+    "function_name": "transfer_ownership",
+    "arguments": "p_team_id uuid, p_new_owner_user_id uuid",
+    "return_type": "void",
+    "security_type": "Security Definer"
   }
 ]

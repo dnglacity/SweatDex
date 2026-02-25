@@ -51,7 +51,7 @@
     "roles": "{authenticated}",
     "operation": "INSERT",
     "using_expression": null,
-    "check_expression": "(user_id = private.get_my_user_id())"
+    "check_expression": "(user_id = ( SELECT private.get_my_user_id() AS get_my_user_id))"
   },
   {
     "schemaname": "public",
@@ -64,11 +64,20 @@
   },
   {
     "schemaname": "public",
+    "tablename": "guardian_links",
+    "policyname": "guardian_links_update_own",
+    "roles": "{authenticated}",
+    "operation": "UPDATE",
+    "using_expression": "(user_id = ( SELECT private.get_my_user_id() AS get_my_user_id))",
+    "check_expression": "(user_id = ( SELECT private.get_my_user_id() AS get_my_user_id))"
+  },
+  {
+    "schemaname": "public",
     "tablename": "players",
     "policyname": "players_delete_coach",
     "roles": "{authenticated}",
     "operation": "DELETE",
-    "using_expression": "is_team_member(team_id)",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM team_members tm\n  WHERE ((tm.team_id = players.team_id) AND (tm.user_id = private.get_my_user_id()) AND (tm.role = ANY (ARRAY['coach'::text, 'owner'::text, 'team_manager'::text])))))",
     "check_expression": null
   },
   {
@@ -137,10 +146,37 @@
   {
     "schemaname": "public",
     "tablename": "teams",
+    "policyname": "teams_delete_owner",
+    "roles": "{authenticated}",
+    "operation": "DELETE",
+    "using_expression": "is_team_owner(id)",
+    "check_expression": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "teams",
     "policyname": "teams_select_member",
     "roles": "{authenticated}",
     "operation": "SELECT",
     "using_expression": "(id IN ( SELECT private.get_my_team_ids() AS get_my_team_ids))",
+    "check_expression": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "teams",
+    "policyname": "teams_update_owner",
+    "roles": "{authenticated}",
+    "operation": "UPDATE",
+    "using_expression": "is_team_owner(id)",
+    "check_expression": "is_team_owner(id)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "users",
+    "policyname": "users_delete_own",
+    "roles": "{authenticated}",
+    "operation": "DELETE",
+    "using_expression": "(user_id = ( SELECT auth.uid() AS uid))",
     "check_expression": null
   },
   {
@@ -150,7 +186,7 @@
     "roles": "{authenticated}",
     "operation": "INSERT",
     "using_expression": null,
-    "check_expression": "(user_id = auth.uid())"
+    "check_expression": "(user_id = ( SELECT auth.uid() AS uid))"
   },
   {
     "schemaname": "public",
@@ -167,7 +203,7 @@
     "policyname": "users_update_own",
     "roles": "{authenticated}",
     "operation": "UPDATE",
-    "using_expression": "(user_id = auth.uid())",
-    "check_expression": null
+    "using_expression": "(user_id = ( SELECT auth.uid() AS uid))",
+    "check_expression": "(user_id = ( SELECT auth.uid() AS uid))"
   }
 ]
