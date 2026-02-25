@@ -33,14 +33,14 @@ AI Review Context: ApexOnDeck
 
     4. Maintainability: Code readability and DRY principles.
 
-    ##Deliverables requested: implement security recommendations.
+    ##Deliverables requested: implement performance recommendations.
     
 4. Known Issues & "Don't Touch" Areas
 
     Known Bugs: 
     
     Issue 1:
-    In "add player" after successfully pulling information from an existing user, "add to roster" fails to link player to user.
+    After adding a new player and successfully linking it to a user, the user should see the team and be labeled a player.
 
     Technical Debt: None.
 
