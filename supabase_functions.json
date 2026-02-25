@@ -113,6 +113,13 @@
   },
   {
     "schema_name": "public",
+    "function_name": "purge_unconfirmed_auth_user",
+    "arguments": "p_email text",
+    "return_type": "text",
+    "security_type": "Security Definer"
+  },
+  {
+    "schema_name": "public",
     "function_name": "set_player_user_id_v1_5",
     "arguments": "",
     "return_type": "trigger",

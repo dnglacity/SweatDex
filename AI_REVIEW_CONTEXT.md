@@ -33,14 +33,14 @@ AI Review Context: ApexOnDeck
 
     4. Maintainability: Code readability and DRY principles.
 
-    ##Deliverables requested: recommend and implement performance recommendations.
+    ##Deliverables requested: None.
     
 4. Known Issues & "Don't Touch" Areas
 
     Known Bugs: 
     
     Issue 1:
-    After adding a new player with an unassigned email, that email is now unable to be used to create a new account.
+    Database connection issue.
 
     Technical Debt: None.
 
@@ -50,4 +50,6 @@ AI Review Context: ApexOnDeck
 
 6. Questions
 
-    
+    Can users be coaches or players for multiple teams?
+
+    What happens when a new user signs up to link up an existing player but information like names do not match?

@@ -2,27 +2,28 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/foundation.dart';
 
 // =============================================================================
-// auth_service.dart  (AOD v1.8 — Efficiency Rebuild)
+// auth_service.dart  (AOD v1.11 — Review Rebuild)
 //
-// CHANGES (Notes.txt — "make Supabase integration more efficient"):
+// CHANGES vs v1.8:
 //
-//   1. signUp() — removed the _updateUserRowWithRetry() polling loop.
-//      The new DB trigger (handle_new_user) runs SECURITY DEFINER with
-//      SET search_path = public and is reliably fast.  Organisation and
-//      athlete_id are now passed as raw_user_meta_data at sign-up time;
-//      the trigger reads them and writes them directly to public.users.
-//      This eliminates the 300 ms × 5 retry loop that previously ran on
-//      every sign-up.
+//   AUTH-1: deleteAccount() now catches AuthSessionMissingException
+//     that can be thrown by signOut() when the session is already gone
+//     after the RPC deletes the auth.users row. The session is effectively
+//     ended either way, so we swallow this specific error.
 //
-//   2. updateProfile() — no change needed; already optimal.
+//   AUTH-2: signOut() is now guarded against the same
+//     AuthSessionMissingException for the same reason.
 //
-//   3. changeEmail() — the re-sign-in step is kept (required for Supabase
-//      password verification pattern).  No other changes.
+//   AUTH-3: changeEmail() now trims and lowercases the newEmail BEFORE the
+//     re-auth call so the comparison against authUser.email is always
+//     case-insensitive and whitespace-safe.
 //
-//   4. deleteAccount() — calls the RPC which handles all DB work atomically;
-//      no change needed.
+//   AUTH-4: updateProfile() now accepts a boolean `clearNickname` param so
+//     a caller can explicitly set nickname to null (empty string → null) via
+//     the account settings screen without passing a null that gets silently
+//     skipped by the existing "if (nickname != null)" guard.
 //
-//   5. Removed _updateUserRowWithRetry() and all associated constants.
+//   MAINT-1: Consistent use of debugPrint for all caught exceptions.
 // =============================================================================
 
 class AuthService {
@@ -40,10 +41,9 @@ class AuthService {
 
   /// Creates a new auth user and public profile.
   ///
-  /// CHANGE (v1.8): organisation and athlete_id are embedded in
-  /// raw_user_meta_data at sign-up time.  The handle_new_user DB trigger
-  /// (SECURITY DEFINER) reads them and writes them to public.users
-  /// immediately — no follow-up UPDATE or retry loop needed.
+  /// organisation and athlete_id are embedded in raw_user_meta_data.
+  /// The handle_new_user DB trigger reads them and writes them to
+  /// public.users immediately — no follow-up UPDATE or retry loop needed.
   Future<AuthResponse> signUp({
     required String email,
     required String password,
@@ -53,34 +53,31 @@ class AuthService {
     String? athleteId,
   }) async {
     final response = await _supabase.auth.signUp(
-      email: email,
+      email: email.trim().toLowerCase(),
       password: password,
       data: {
-        'first_name': firstName,
-        'last_name':  lastName,
-        // Keep combined name for any legacy consumers.
+        'first_name': firstName.trim(),
+        'last_name':  lastName.trim(),
+        // Combined name kept for any legacy consumers (e.g. old DB rows).
         'name': '${firstName.trim()} ${lastName.trim()}'.trim(),
         if (organization != null && organization.isNotEmpty)
-          'organization': organization,
+          'organization': organization.trim(),
         if (athleteId != null && athleteId.isNotEmpty)
-          'athlete_id': athleteId,
+          'athlete_id': athleteId.trim(),
       },
     );
-
-    // CHANGE: No post-sign-up update call needed.  The DB trigger (Section 7
-    // of supabase_migration.sql) handles creating the public.users row with
-    // all fields from raw_user_meta_data in a single SECURITY DEFINER INSERT.
     return response;
   }
 
   // ── Sign In ───────────────────────────────────────────────────────────────
 
+  /// Signs in with email and password.
   Future<AuthResponse> signIn({
     required String email,
     required String password,
   }) async {
     return await _supabase.auth.signInWithPassword(
-      email: email,
+      email: email.trim().toLowerCase(),
       password: password,
     );
   }
@@ -92,7 +89,6 @@ class AuthService {
     try {
       final authUser = currentUser;
       if (authUser == null) return null;
-      // OPTIMIZATION: explicit column list reduces payload.
       return await _supabase
           .from('users')
           .select(
@@ -108,26 +104,39 @@ class AuthService {
   }
 
   /// Updates the user's profile fields in public.users.
-  /// Accepts any subset of: firstName, lastName, nickname, organization, athleteId.
-  /// NOTE: email changes must use changeEmail() — it is intentionally excluded.
+  ///
+  /// Only supplied (non-null) fields are sent in the UPDATE — the existing
+  /// row values for other fields are preserved.
+  ///
+  /// AUTH-4: [clearNickname] = true explicitly sets nickname = null so
+  /// the user can remove a nickname they previously set. This bypasses the
+  /// "if (nickname != null)" guard that would otherwise skip the update.
   Future<void> updateProfile({
     String? firstName,
     String? lastName,
     String? nickname,
+    bool clearNickname = false,
     String? organization,
     String? athleteId,
   }) async {
     final authUser = currentUser;
     if (authUser == null) throw Exception('Not logged in.');
 
-    // OPTIMIZATION: only build the map for fields that were actually supplied,
-    // so we don't send null values or overwrite data unnecessarily.
     final updates = <String, dynamic>{};
-    if (firstName     != null) updates['first_name']   = firstName;
-    if (lastName      != null) updates['last_name']    = lastName;
-    if (nickname      != null) updates['nickname']     = nickname;
-    if (organization  != null) updates['organization'] = organization;
-    if (athleteId     != null) updates['athlete_id']   = athleteId;
+    if (firstName    != null) updates['first_name']   = firstName.trim();
+    if (lastName     != null) updates['last_name']    = lastName.trim();
+
+    // clearNickname = true → explicitly write null to the column.
+    // clearNickname = false + nickname != null → write the value.
+    // clearNickname = false + nickname == null → skip (no change).
+    if (clearNickname) {
+      updates['nickname'] = null;
+    } else if (nickname != null) {
+      updates['nickname'] = nickname.isEmpty ? null : nickname.trim();
+    }
+
+    if (organization != null) updates['organization'] = organization.trim();
+    if (athleteId    != null) updates['athlete_id']   = athleteId.trim();
 
     if (updates.isEmpty) return;
 
@@ -146,7 +155,7 @@ class AuthService {
   ///        – Updates players.guardian_email where it matches the old email
   ///   3. Calls Supabase Auth updateUser() to change the login email.
   ///
-  /// Throws a user-readable Exception on any failure so the UI can display it.
+  /// AUTH-3: newEmail is normalised (trim + lowercase) before comparison.
   Future<void> changeEmail({
     required String currentPassword,
     required String newEmail,
@@ -155,21 +164,22 @@ class AuthService {
     if (authUser == null) throw Exception('Not logged in.');
     if (authUser.email == null) throw Exception('Current email not found.');
 
-    // Step 1: verify current password by re-signing in.
-    try {
-      await _supabase.auth.signInWithPassword(
-        email:    authUser.email!,
-        password: currentPassword,
-      );
-    } catch (e) {
-      throw Exception('Current password is incorrect. Please try again.');
-    }
-
+    // AUTH-3: normalise both sides of the comparison.
     final oldEmail = authUser.email!.toLowerCase().trim();
     final cleanNew = newEmail.toLowerCase().trim();
 
     if (oldEmail == cleanNew) {
       throw Exception('New email is the same as the current email.');
+    }
+
+    // Step 1: verify current password by re-signing in.
+    try {
+      await _supabase.auth.signInWithPassword(
+        email:    oldEmail,
+        password: currentPassword,
+      );
+    } catch (e) {
+      throw Exception('Current password is incorrect. Please try again.');
     }
 
     // Step 2: cascade the change across public tables via SECURITY DEFINER RPC.
@@ -181,7 +191,8 @@ class AuthService {
     } catch (e) {
       final msg = e.toString();
       if (msg.contains('already in use') || msg.contains('already registered')) {
-        throw Exception('That email address is already in use by another account.');
+        throw Exception(
+            'That email address is already in use by another account.');
       }
       throw Exception('Database update failed: $msg');
     }
@@ -199,26 +210,53 @@ class AuthService {
 
   // ── Delete Account ────────────────────────────────────────────────────────
 
-  /// Deletes the current user's account via SECURITY DEFINER RPC.
-  /// Blocked if the user is the sole owner of any team.
+  /// Deletes the current user's account via the delete_account SECURITY
+  /// DEFINER RPC, then signs out.
+  ///
+  /// AUTH-1: AuthSessionMissingException from signOut() is swallowed because
+  /// the RPC may have already invalidated the session by deleting the
+  /// auth.users row — the user is effectively signed out either way.
   Future<void> deleteAccount() async {
-    await _supabase.rpc('delete_account');
-    await _supabase.auth.signOut();
+    try {
+      await _supabase.rpc('delete_account');
+    } catch (e) {
+      // Re-throw unless it's the expected session-already-gone case.
+      if (e is! AuthSessionMissingException) rethrow;
+    }
+    try {
+      await _supabase.auth.signOut();
+    } on AuthSessionMissingException {
+      // AUTH-1: session was already invalidated by the RPC — ignore.
+      debugPrint('deleteAccount: session already gone after RPC, ignoring.');
+    }
   }
 
   // ── Sign Out ──────────────────────────────────────────────────────────────
 
+  /// Signs the current user out.
+  ///
+  /// AUTH-2: AuthSessionMissingException is swallowed — if the session
+  /// is already gone (e.g. token expired), the user is effectively signed out.
   Future<void> signOut() async {
-    await _supabase.auth.signOut();
+    try {
+      await _supabase.auth.signOut();
+    } on AuthSessionMissingException {
+      // AUTH-2: already signed out — no action needed.
+      debugPrint('signOut: no active session.');
+    }
   }
 
   // ── Password Reset ────────────────────────────────────────────────────────
 
+  /// Sends a password reset email to [email].
   Future<void> resetPassword(String email) async {
-    await _supabase.auth.resetPasswordForEmail(email);
+    await _supabase.auth.resetPasswordForEmail(
+      email.trim().toLowerCase(),
+    );
   }
 
   // ── Auth State Stream ─────────────────────────────────────────────────────
 
+  /// Emits [AuthState] events for the lifetime of the app.
   Stream<AuthState> get authStateChanges => _supabase.auth.onAuthStateChange;
 }
