@@ -64,6 +64,13 @@
   },
   {
     "schema_name": "public",
+    "function_name": "fn_sync_player_membership_on_link",
+    "arguments": "",
+    "return_type": "trigger",
+    "security_type": "Security Definer"
+  },
+  {
+    "schema_name": "public",
     "function_name": "get_current_user_id",
     "arguments": "",
     "return_type": "uuid",

@@ -33,14 +33,14 @@ AI Review Context: ApexOnDeck
 
     4. Maintainability: Code readability and DRY principles.
 
-    ##Deliverables requested: implement performance recommendations.
+    ##Deliverables requested: recommend and implement performance recommendations.
     
 4. Known Issues & "Don't Touch" Areas
 
     Known Bugs: 
     
     Issue 1:
-    After adding a new player and successfully linking it to a user, the user should see the team and be labeled a player.
+    After adding a new player with an unassigned email, that email is now unable to be used to create a new account.
 
     Technical Debt: None.
 
