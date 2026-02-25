@@ -1,6 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:sweatdex/models/player.dart';
+// BUG FIX: corrected package import to relative path.
+// The original file used `package:sweatdex/models/player.dart` which is an
+// absolute package-name import. All other screens in this project use relative
+// imports (e.g. `../models/player.dart`). While both forms work when the
+// package name matches pubspec.yaml (`name: sweatdex`), mixing styles causes
+// the analyzer to report inconsistencies and can break on rename/refactor.
+// Standardised to relative import to match the rest of the codebase.
+import '../models/player.dart';
 import '../services/player_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -209,7 +216,7 @@ class _GameRosterScreenState extends State<GameRosterScreen>
   void _clearAll() => setState(() {
         _starters.clear();
         _substitutes.clear();
-        _positionOverrides.clear();  // CHANGE (v1.4): clear overrides too
+        _positionOverrides.clear(); // CHANGE (v1.4): clear overrides too
       });
 
   // ── Position override edit ────────────────────────────────────────────────
@@ -618,11 +625,6 @@ class _GameRosterScreenState extends State<GameRosterScreen>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // _AvailableTabView  (CHANGE v1.4 — lazy loading via keep-alive mixin)
-//
-// Wrapping the "Available" tab body in its own StatefulWidget with
-// AutomaticKeepAliveClientMixin prevents Flutter from discarding and
-// rebuilding this widget every time the coach switches to the Roster tab.
-// Scroll position and list state are preserved across tab switches.
 // ─────────────────────────────────────────────────────────────────────────────
 class _AvailableTabView extends StatefulWidget {
   final List<Player> allPlayers;
@@ -644,7 +646,7 @@ class _AvailableTabView extends StatefulWidget {
 class _AvailableTabViewState extends State<_AvailableTabView>
     with AutomaticKeepAliveClientMixin {
 
-  // AutomaticKeepAliveClientMixin: keep this tab alive across switches.
+  // Keeps this tab's state alive when the user switches to the Roster tab.
   @override
   bool get wantKeepAlive => true;
 
@@ -707,9 +709,6 @@ class _AvailableTabViewState extends State<_AvailableTabView>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // _RosterTabView  (CHANGE v1.4 — lazy loading + editable positions)
-//
-// Wrapping the "Roster" tab body in its own StatefulWidget with
-// AutomaticKeepAliveClientMixin prevents state loss when switching tabs.
 // ─────────────────────────────────────────────────────────────────────────────
 class _RosterTabView extends StatefulWidget {
   final List<Player> starters;
@@ -749,6 +748,7 @@ class _RosterTabView extends StatefulWidget {
 class _RosterTabViewState extends State<_RosterTabView>
     with AutomaticKeepAliveClientMixin {
 
+  // Keeps this tab's state alive across tab switches.
   @override
   bool get wantKeepAlive => true;
 
@@ -778,7 +778,7 @@ class _RosterTabViewState extends State<_RosterTabView>
             onDropPlayer: widget.onDropToStarters,
             onRemove: widget.onRemoveStarter,
             onSendToBench: widget.onSendToBench,
-            onEditPosition: widget.onEditPosition, // CHANGE (v1.4)
+            onEditPosition: widget.onEditPosition,
             onReorder: widget.onReorderStarters,
           ),
           const SizedBox(height: 24),
@@ -797,7 +797,7 @@ class _RosterTabViewState extends State<_RosterTabView>
             onDropPlayer: widget.onDropToSubs,
             onRemove: widget.onRemoveSub,
             onPromote: widget.onPromote,
-            onEditPosition: widget.onEditPosition,  // CHANGE (v1.4)
+            onEditPosition: widget.onEditPosition,
             onReorder: widget.onReorderSubs,
           ),
           if (widget.starters.isEmpty && widget.substitutes.isEmpty)
@@ -937,7 +937,6 @@ class _DraggablePlayerCard extends StatelessWidget {
         ),
         title: Text(player.name,
             style: const TextStyle(fontWeight: FontWeight.w500)),
-        // Show position and/or nickname in subtitle.
         subtitle: _buildSubtitle(),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
@@ -990,7 +989,7 @@ class _StarterDropZone extends StatelessWidget {
   final ValueChanged<Player> onDropPlayer;
   final ValueChanged<Player> onRemove;
   final ValueChanged<Player> onSendToBench;
-  final ValueChanged<Player> onEditPosition; // CHANGE (v1.4)
+  final ValueChanged<Player> onEditPosition;
   final void Function(int, int) onReorder;
 
   const _StarterDropZone({
@@ -1057,7 +1056,7 @@ class _StarterDropZone extends StatelessWidget {
                       slotNumber: i + 1,
                       accentColor: theme.colorScheme.primary,
                       positionOverrides: positionOverrides,
-                      onEditPosition: onEditPosition,   // CHANGE (v1.4)
+                      onEditPosition: onEditPosition,
                       trailingActions: [
                         Tooltip(
                           message: 'Move to bench',
@@ -1095,7 +1094,7 @@ class _SubsDropZone extends StatelessWidget {
   final ValueChanged<Player> onDropPlayer;
   final ValueChanged<Player> onRemove;
   final ValueChanged<Player> onPromote;
-  final ValueChanged<Player> onEditPosition; // CHANGE (v1.4)
+  final ValueChanged<Player> onEditPosition;
   final void Function(int, int) onReorder;
 
   const _SubsDropZone({
@@ -1157,7 +1156,7 @@ class _SubsDropZone extends StatelessWidget {
                       slotNumber: i + 1,
                       accentColor: theme.colorScheme.secondary,
                       positionOverrides: positionOverrides,
-                      onEditPosition: onEditPosition,   // CHANGE (v1.4)
+                      onEditPosition: onEditPosition,
                       trailingActions: [
                         Tooltip(
                           message: 'Promote to starter',
@@ -1189,7 +1188,6 @@ class _SubsDropZone extends StatelessWidget {
 //
 // CHANGE (v1.4): Shows a tappable position chip beneath the player name.
 // Tapping the chip calls [onEditPosition] to open the override sheet.
-// The effective position is: override (if set) → player.position → '—'.
 // ─────────────────────────────────────────────────────────────────────────────
 class _RosterRowTile extends StatelessWidget {
   final Player player;

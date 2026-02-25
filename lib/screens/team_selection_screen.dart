@@ -1,34 +1,36 @@
 import 'package:flutter/material.dart';
 import '../services/player_service.dart';
 import '../services/auth_service.dart';
-import '../widgets/sport_autocomplete_field.dart'; // CHANGE: extracted widget
+import '../widgets/sport_autocomplete_field.dart'; // Shared autocomplete widget
 import 'roster_screen.dart';
 import 'login_screen.dart';
 import 'player_self_view_screen.dart';
 import 'account_settings_screen.dart';
 
 // =============================================================================
-// team_selection_screen.dart  (AOD v1.7 — updated)
+// team_selection_screen.dart  (AOD v1.7 — updated, BUG FIX v1.8-patch)
+//
+// BUG FIX (AI_REVIEW — _showEditTeamDialog stale controller read):
+//   The original _showEditTeamDialog() deferred controller disposal via
+//   addPostFrameCallback, but then read nameController.text AFTER the deferred
+//   dispose call was registered. On the same frame that the dialog closes,
+//   the deferred dispose fires and the subsequent
+//   `nameController.text.trim()` read inside the `if (result == true)` block
+//   could access a disposed controller — especially on fast devices where the
+//   animation completes in one frame.
+//
+//   Fix: capture `capturedName` and `capturedSport` from the controller/local
+//   variable IMMEDIATELY after showDialog() returns (while the controller is
+//   still alive), then pass the captured strings into updateTeam() and
+//   dispose the controllers on the next frame. This is identical to the
+//   pattern already applied in roster_screen.dart._showEditTeamInline().
 //
 // BUG FIX (Notes.txt — Sport field typing):
 //   Replaced the local _SportAutocompleteField StatelessWidget with the
 //   shared SportAutocompleteField StatefulWidget from
 //   lib/widgets/sport_autocomplete_field.dart.
 //
-//   Root cause of old bug: the old widget's fieldViewBuilder ran
-//   `textController.text = controller.text` on every rebuild, which reset
-//   in-progress typed text. The new widget uses a `_synced` flag so the
-//   copy happens only on the first build.
-//
-// OPTIMIZATION: Removed the duplicated _SportAutocompleteField class that
-//   previously existed in both this file and roster_screen.dart. Both now
-//   import the single canonical implementation.
-//
-// All other v1.7 behaviours retained:
-//   – Sport autocomplete with sport_id capture
-//   – createTeam() passes sport_id to RPC
-//   – Account Settings in overflow menu
-//   – Role badges, BUG FIX deferred dispose, double-submit guard
+// All other v1.7 behaviours retained.
 // =============================================================================
 
 class TeamSelectionScreen extends StatefulWidget {
@@ -54,6 +56,7 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
     _loadSports();
   }
 
+  /// Triggers a fresh fetch of the user's teams.
   void _refreshTeams() {
     setState(() {
       _teamsFuture = _playerService.getTeams();
@@ -96,6 +99,8 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
     if (confirm != true || !mounted) return;
 
     try {
+      // Clear in-memory and disk caches before signing out so the next
+      // account on this device gets a fresh state.
       _playerService.clearCache();
       await _authService.signOut();
       if (mounted) {
@@ -124,7 +129,7 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
     final sportSearchController =
         TextEditingController(text: selectedSportName);
     final formKey = GlobalKey<FormState>();
-    bool submitted = false;
+    bool submitted = false; // Guards against double-submit on fast taps.
 
     final result = await showDialog<bool>(
       context: context,
@@ -149,7 +154,8 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
                       : null,
                 ),
                 const SizedBox(height: 16),
-                // BUG FIX: now uses the fixed StatefulWidget version.
+                // Uses the fixed StatefulWidget — prevents typed text being
+                // reset on every rebuild (see sport_autocomplete_field.dart).
                 SportAutocompleteField(
                   controller: sportSearchController,
                   sports: _sports,
@@ -183,7 +189,15 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
       ),
     );
 
-    // Deferred disposal — prevents "used after dispose" on close animation.
+    // BUG FIX: Capture controller values BEFORE the deferred dispose fires.
+    // Reading nameController.text after dispose() throws an assertion error.
+    // This mirrors the pattern in roster_screen.dart._showEditTeamInline().
+    final capturedName  = nameController.text.trim();
+    final capturedSport = selectedSportName; // local variable; always safe
+    final capturedSportId = selectedSportId; // capture nullable String too
+
+    // Defer disposal so Flutter's dialog-close animation can fully detach
+    // the TextFormField from the controller before it is destroyed.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       nameController.dispose();
       sportSearchController.dispose();
@@ -193,9 +207,9 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
       try {
         await _playerService.updateTeam(
           team['id'] as String,
-          nameController.text.trim(),
-          selectedSportName,
-          sportId: selectedSportId,
+          capturedName,       // use captured value — not nameController.text
+          capturedSport,      // use captured value — not selectedSportName
+          sportId: capturedSportId,
         );
         _refreshTeams();
         if (mounted) {
@@ -266,7 +280,7 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
     String selectedSportName = 'General';
     String? selectedSportId;
     final formKey = GlobalKey<FormState>();
-    bool submitted = false; // BUG FIX: prevents double-submit on fast taps
+    bool submitted = false; // Prevents double-submit on fast taps.
 
     final result = await showDialog<bool>(
       context: context,
@@ -293,7 +307,7 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
                       : null,
                 ),
                 const SizedBox(height: 16),
-                // BUG FIX: uses the fixed StatefulWidget version.
+                // Uses the fixed StatefulWidget from sport_autocomplete_field.dart.
                 SportAutocompleteField(
                   controller: sportSearchController,
                   sports: _sports,
@@ -326,7 +340,12 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
       ),
     );
 
-    // Deferred disposal.
+    // Capture values BEFORE deferred dispose — same safety pattern as above.
+    final capturedName    = nameController.text.trim();
+    final capturedSport   = selectedSportName;
+    final capturedSportId = selectedSportId;
+
+    // Deferred disposal to let the dialog animation complete.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       nameController.dispose();
       sportSearchController.dispose();
@@ -335,9 +354,9 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
     if (result == true && mounted) {
       try {
         await _playerService.createTeam(
-          nameController.text.trim(),
-          selectedSportName,
-          sportId: selectedSportId,
+          capturedName,
+          capturedSport,
+          sportId: capturedSportId,
         );
         _refreshTeams();
         if (mounted) {
@@ -561,6 +580,7 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
                           ),
                     onTap: () async {
                       if (isPlayer) {
+                        // Players see read-only PlayerSelfViewScreen.
                         await Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -571,6 +591,7 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
                           ),
                         );
                       } else {
+                        // Coaches, owners, managers see the full roster.
                         await Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -602,6 +623,7 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
 
   // ── Role badge widget ──────────────────────────────────────────────────────
 
+  /// Returns a small coloured badge showing the user's role on the team.
   Widget _roleBadge(String role, ColorScheme cs) {
     switch (role) {
       case 'owner':
@@ -624,6 +646,7 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
 
 // ── Badge widget ──────────────────────────────────────────────────────────────
 
+/// Compact pill badge used to display a user's role on a team card.
 class _Badge extends StatelessWidget {
   final String label;
   final Color textColor;

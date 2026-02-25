@@ -32,17 +32,15 @@ AI Review Context: ApexOnDeck
     3. Performance: Widget rebuilds and memory leaks.
 
     4. Maintainability: Code readability and DRY principles.
+
+    ##Deliverables requested: implement security recommendations.
     
 4. Known Issues & "Don't Touch" Areas
 
     Known Bugs: 
     
     Issue 1:
-    lookupUserByEmail error: PostgrestException(message: Could not find the function
-public.lookup_user_by_email(p_email) in the schema cache, code: PGRST202, details: Searched for the function 
-public.lookup_user_by_email with parameter p_email or with a single unnamed json/jsonb parameter, but no     
-matches were found in the schema cache., hint: Perhaps you meant to call the function
-public.change_user_email)
+    In "add player" after successfully pulling information from an existing user, "add to roster" fails to link player to user.
 
     Technical Debt: None.
 
