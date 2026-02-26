@@ -23,33 +23,6 @@ AI Review Context: ApexOnDeck
     1. Real-time data syncing
     2. Unsure.
 
-3. Review Priorities (See .json files as necessary)
+3. Bugs/Issues 
 
-    1. Security: Data handling and authentication.
-
-    2. Scalability: How easily can new features be added?
-
-    3. Performance: Widget rebuilds and memory leaks.
-
-    4. Maintainability: Code readability and DRY principles.
-
-    ##Deliverables requested: None.
-    
-4. Known Issues & "Don't Touch" Areas
-
-    Known Bugs: 
-    
-    Issue 1:
-    Database connection issue.
-
-    Technical Debt: None.
-
-5. Coding Standards
-
-    Note an explain each element of the code or script.
-
-6. Questions
-
-    Can users be coaches or players for multiple teams?
-
-    What happens when a new user signs up to link up an existing player but information like names do not match?
+    1. Database connection issue.

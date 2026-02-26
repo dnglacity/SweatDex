@@ -19,3 +19,37 @@ B. Move the is_team_member / is_team_owner check inside the DB for deleteTeam an
 Currently player_service.dart calls _isTeamOwner() (a round-trip) before calling the actual delete — two round-trips total. The ownership check should be enforced entirely by RLS so the Dart layer only needs to make one call and handle a permission error.
 C. Add get_my_team_ids() as an index-backed materialized or cached query
 [Inference] On rosters with 50+ teams, every SELECT on players or team_members invokes get_my_team_ids() per row evaluated by Postgres. A partial index CREATE INDEX idx_team_members_user_id ON team_members(user_id) (if not already present) would ensure this subquery is an index-only scan.
+
+
+
+
+Review Priorities (See .json files as necessary)
+
+    1. Security: Data handling and authentication.
+
+    2. Scalability: How easily can new features be added?
+
+    3. Performance: Widget rebuilds and memory leaks.
+
+    4. Maintainability: Code readability and DRY principles.
+
+    ##Deliverables requested: None.
+    
+4. Known Issues & "Don't Touch" Areas
+
+    Known Bugs: 
+    
+    Issue 1:
+    Database connection issue.
+
+    Technical Debt: None.
+
+5. Coding Standards
+
+    Note an explain each element of the code or script.
+
+6. Questions
+
+    Can users be coaches or players for multiple teams?
+
+    What happens when a new user signs up to link up an existing player but information like names do not match?
