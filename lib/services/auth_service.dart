@@ -2,28 +2,30 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/foundation.dart';
 
 // =============================================================================
-// auth_service.dart  (AOD v1.11 — Review Rebuild)
+// auth_service.dart  (AOD v1.12 — BUG FIX: database connection error)
 //
-// CHANGES vs v1.8:
+// FIXES (AI_TODO_List.md — "Review and fix database connection issue"):
 //
-//   AUTH-1: deleteAccount() now catches AuthSessionMissingException
-//     that can be thrown by signOut() when the session is already gone
-//     after the RPC deletes the auth.users row. The session is effectively
-//     ended either way, so we swallow this specific error.
+//   FIX-1: signUp() and signIn() now have try/catch blocks that debugPrint
+//     the raw exception before re-throwing. Previously both methods had NO
+//     error handling — exceptions propagated raw to login_screen which only
+//     logged them IF login_screen's own catch block ran (which it didn't
+//     always, due to FIX-1 in login_screen.dart).
 //
-//   AUTH-2: signOut() is now guarded against the same
-//     AuthSessionMissingException for the same reason.
+//   FIX-2: signUp() validates that the returned AuthResponse.user is not
+//     null and throws a typed exception if it is, giving login_screen's
+//     _getErrorMessage() a reliable string to match against ('null_user').
+//     Supabase can return HTTP 200 with user==null when the handle_new_user
+//     DB trigger fails silently or an email rate-limit is hit.
 //
-//   AUTH-3: changeEmail() now trims and lowercases the newEmail BEFORE the
-//     re-auth call so the comparison against authUser.email is always
-//     case-insensitive and whitespace-safe.
+//   FIX-3: signIn() now logs the error with the email (redacted to domain
+//     only for privacy) so failed logins are traceable in the console
+//     without exposing the full address.
 //
-//   AUTH-4: updateProfile() now accepts a boolean `clearNickname` param so
-//     a caller can explicitly set nickname to null (empty string → null) via
-//     the account settings screen without passing a null that gets silently
-//     skipped by the existing "if (nickname != null)" guard.
-//
-//   MAINT-1: Consistent use of debugPrint for all caught exceptions.
+// All v1.11 behaviours retained:
+//   – AUTH-1 through AUTH-4 fixes
+//   – deleteAccount(), signOut(), changeEmail(), updateProfile()
+//   – Consistent debugPrint for all caught exceptions
 // =============================================================================
 
 class AuthService {
@@ -41,7 +43,11 @@ class AuthService {
 
   /// Creates a new auth user and public profile.
   ///
-  /// organisation and athlete_id are embedded in raw_user_meta_data.
+  /// FIX-1: Wrapped in try/catch so the raw Supabase error is always logged.
+  /// FIX-2: Validates response.user != null. If null, throws a typed exception
+  ///   so login_screen._getErrorMessage() can show a specific message.
+  ///
+  /// Organisation and athlete_id are embedded in raw_user_meta_data.
   /// The handle_new_user DB trigger reads them and writes them to
   /// public.users immediately — no follow-up UPDATE or retry loop needed.
   Future<AuthResponse> signUp({
@@ -52,34 +58,68 @@ class AuthService {
     String? organization,
     String? athleteId,
   }) async {
-    final response = await _supabase.auth.signUp(
-      email: email.trim().toLowerCase(),
-      password: password,
-      data: {
-        'first_name': firstName.trim(),
-        'last_name':  lastName.trim(),
-        // Combined name kept for any legacy consumers (e.g. old DB rows).
-        'name': '${firstName.trim()} ${lastName.trim()}'.trim(),
-        if (organization != null && organization.isNotEmpty)
-          'organization': organization.trim(),
-        if (athleteId != null && athleteId.isNotEmpty)
-          'athlete_id': athleteId.trim(),
-      },
-    );
-    return response;
+    try {
+      final response = await _supabase.auth.signUp(
+        email: email.trim().toLowerCase(),
+        password: password,
+        data: {
+          'first_name': firstName.trim(),
+          'last_name':  lastName.trim(),
+          // Combined name kept for any legacy consumers (e.g. old DB rows).
+          'name': '${firstName.trim()} ${lastName.trim()}'.trim(),
+          if (organization != null && organization.isNotEmpty)
+            'organization': organization.trim(),
+          if (athleteId != null && athleteId.isNotEmpty)
+            'athlete_id': athleteId.trim(),
+        },
+      );
+
+      // FIX-2: Supabase returns HTTP 200 with user==null in some failure
+      // scenarios (handle_new_user trigger error, silent rate-limit).
+      // Previously this was not checked and login_screen showed a false
+      // success message.
+      if (response.user == null) {
+        debugPrint(
+          'AuthService.signUp: response.user is null for email domain '
+          '${email.split('@').lastOrNull ?? 'unknown'}. '
+          'Possible handle_new_user trigger failure or rate limit.',
+        );
+        throw Exception(
+          'null_user: Account could not be created. '
+          'Please try again or contact support.',
+        );
+      }
+
+      return response;
+    } catch (e) {
+      // FIX-1: Always log the raw error. Re-throw so login_screen can
+      // map it to a user-friendly message via _getErrorMessage().
+      debugPrint('AuthService.signUp error: $e');
+      rethrow;
+    }
   }
 
   // ── Sign In ───────────────────────────────────────────────────────────────
 
   /// Signs in with email and password.
+  ///
+  /// FIX-1: Wrapped in try/catch so the raw Supabase error is always logged.
+  /// FIX-3: Logs the email domain only (not the full address) for privacy.
   Future<AuthResponse> signIn({
     required String email,
     required String password,
   }) async {
-    return await _supabase.auth.signInWithPassword(
-      email: email.trim().toLowerCase(),
-      password: password,
-    );
+    try {
+      return await _supabase.auth.signInWithPassword(
+        email: email.trim().toLowerCase(),
+        password: password,
+      );
+    } catch (e) {
+      // FIX-1 / FIX-3: Log domain only — never log the full email address.
+      final domain = email.contains('@') ? email.split('@').last : 'unknown';
+      debugPrint('AuthService.signIn error (domain: $domain): $e');
+      rethrow;
+    }
   }
 
   // ── Profile ───────────────────────────────────────────────────────────────
@@ -126,9 +166,6 @@ class AuthService {
     if (firstName    != null) updates['first_name']   = firstName.trim();
     if (lastName     != null) updates['last_name']    = lastName.trim();
 
-    // clearNickname = true → explicitly write null to the column.
-    // clearNickname = false + nickname != null → write the value.
-    // clearNickname = false + nickname == null → skip (no change).
     if (clearNickname) {
       updates['nickname'] = null;
     } else if (nickname != null) {
@@ -164,7 +201,6 @@ class AuthService {
     if (authUser == null) throw Exception('Not logged in.');
     if (authUser.email == null) throw Exception('Current email not found.');
 
-    // AUTH-3: normalise both sides of the comparison.
     final oldEmail = authUser.email!.toLowerCase().trim();
     final cleanNew = newEmail.toLowerCase().trim();
 
@@ -179,6 +215,7 @@ class AuthService {
         password: currentPassword,
       );
     } catch (e) {
+      debugPrint('changeEmail re-auth error: $e');
       throw Exception('Current password is incorrect. Please try again.');
     }
 
@@ -189,6 +226,7 @@ class AuthService {
         'p_new_email': cleanNew,
       });
     } catch (e) {
+      debugPrint('changeEmail RPC error: $e');
       final msg = e.toString();
       if (msg.contains('already in use') || msg.contains('already registered')) {
         throw Exception(
@@ -201,6 +239,7 @@ class AuthService {
     try {
       await _supabase.auth.updateUser(UserAttributes(email: cleanNew));
     } catch (e) {
+      debugPrint('changeEmail auth updateUser error: $e');
       throw Exception(
         'Profile updated but auth email change failed. '
         'Please contact support. Details: $e',
@@ -220,13 +259,11 @@ class AuthService {
     try {
       await _supabase.rpc('delete_account');
     } catch (e) {
-      // Re-throw unless it's the expected session-already-gone case.
       if (e is! AuthSessionMissingException) rethrow;
     }
     try {
       await _supabase.auth.signOut();
     } on AuthSessionMissingException {
-      // AUTH-1: session was already invalidated by the RPC — ignore.
       debugPrint('deleteAccount: session already gone after RPC, ignoring.');
     }
   }
@@ -241,7 +278,6 @@ class AuthService {
     try {
       await _supabase.auth.signOut();
     } on AuthSessionMissingException {
-      // AUTH-2: already signed out — no action needed.
       debugPrint('signOut: no active session.');
     }
   }

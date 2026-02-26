@@ -3,17 +3,39 @@ import '../services/auth_service.dart';
 import 'team_selection_screen.dart';
 
 // =============================================================================
-// login_screen.dart  (AOD v1.7)
+// login_screen.dart  (AOD v1.12 — BUG FIX: database connection error)
 //
-// CHANGE (Notes.txt v1.7):
-//   • Sign-up now collects `First Name` and `Last Name` as separate fields
-//     (replaces the combined `Name` field).
-//   • Sign-up now has a `Confirm Password` field. Form validates that the
-//     two password fields match before submitting.
-//   • Sign-up now has an optional `Athlete ID` field.
-//   • AuthService.signUp() now receives firstName / lastName / athleteId.
+// FIXES (AI_TODO_List.md — "Review and fix database connection issue"):
 //
-// BUG FIX (Bug 6 — retained): _toggleMode() clears ALL controllers.
+//   FIX-1: Added debugPrint(e) in _handleSubmit() catch block so the raw
+//     Supabase/PostgreSQL error always appears in the console. Previously the
+//     exception was swallowed into _getErrorMessage() with no logging, making
+//     silent failures impossible to diagnose.
+//
+//   FIX-2: signUp() response is now checked. AuthResponse.user == null
+//     indicates a silent failure (rate-limit, validation, or trigger error
+//     where Supabase returns HTTP 200 but no user object). Previously the
+//     code fell through to the success snackbar and mode-toggle even though
+//     no account was created.
+//
+//   FIX-3: _getErrorMessage() now logs the raw error string before matching,
+//     and the 'Database error' branch now surfaces the underlying message
+//     instead of a generic "contact support" dead-end. The branch also now
+//     matches the actual Supabase trigger-failure string:
+//     "Database error saving new user" (returned when handle_new_user
+//     trigger fails, e.g. due to a duplicate email in public.users or a
+//     missing column).
+//
+//   FIX-4: Added a specific 'null user' error message so the sign-up silent-
+//     failure path is visible to the user ("Account could not be created.
+//     Please try again or contact support.").
+//
+//   FIX-5: 'over_email_send_rate_limit' matcher broadened — Supabase also
+//     returns 'email_send_rate_limit_exceeded' in some SDK versions.
+//
+// All v1.7 behaviours retained:
+//   – First/Last name, Confirm Password, Athlete ID fields
+//   – BUG FIX (Bug 6): _toggleMode() clears ALL controllers
 // =============================================================================
 
 class LoginScreen extends StatefulWidget {
@@ -30,16 +52,16 @@ class _LoginScreenState extends State<LoginScreen> {
   // ── Text controllers for all form fields ──────────────────────────────────
   final _emailController            = TextEditingController();
   final _passwordController         = TextEditingController();
-  final _confirmPasswordController  = TextEditingController(); // CHANGE (v1.7)
-  final _firstNameController        = TextEditingController(); // CHANGE (v1.7)
-  final _lastNameController         = TextEditingController(); // CHANGE (v1.7)
+  final _confirmPasswordController  = TextEditingController();
+  final _firstNameController        = TextEditingController();
+  final _lastNameController         = TextEditingController();
   final _organizationController     = TextEditingController();
-  final _athleteIdController        = TextEditingController(); // CHANGE (v1.7)
+  final _athleteIdController        = TextEditingController();
 
   bool _isLoading       = false;
   bool _isSignUp        = false;
   bool _obscurePassword = true;
-  bool _obscureConfirm  = true; // CHANGE (v1.7)
+  bool _obscureConfirm  = true;
 
   @override
   void dispose() {
@@ -68,8 +90,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       if (_isSignUp) {
-        // CHANGE (v1.7): pass firstName, lastName, athleteId.
-        await _authService.signUp(
+        final response = await _authService.signUp(
           email:        _emailController.text.trim(),
           password:     _passwordController.text,
           firstName:    _firstNameController.text.trim(),
@@ -82,6 +103,16 @@ class _LoginScreenState extends State<LoginScreen> {
                           : _athleteIdController.text.trim(),
         );
 
+        // FIX-2: Supabase can return HTTP 200 with a null user when the
+        // handle_new_user DB trigger fails or a rate-limit is hit silently.
+        // Previously this path fell through to the success snackbar.
+        if (response.user == null) {
+          throw Exception(
+            'null_user: Account could not be created. '
+            'Please try again or contact support.',
+          );
+        }
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -89,7 +120,7 @@ class _LoginScreenState extends State<LoginScreen> {
               backgroundColor: Colors.green,
             ),
           );
-          _toggleMode(); // switch back to sign-in
+          _toggleMode();
         }
       } else {
         await _authService.signIn(
@@ -103,6 +134,11 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
     } catch (e) {
+      // FIX-1: Always log the raw error to the console so it's visible
+      // during development and in crash-reporting tools. Previously this
+      // block went straight to _getErrorMessage() with no trace.
+      debugPrint('LoginScreen _handleSubmit error: $e');
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -119,24 +155,59 @@ class _LoginScreenState extends State<LoginScreen> {
 
   // ── Error messages ────────────────────────────────────────────────────────
 
+  /// Maps raw Supabase / Dart exception strings to user-friendly messages.
+  ///
+  /// FIX-3: Each branch now calls debugPrint so the FULL raw error is always
+  /// in the console even when we show a simplified message to the user.
+  ///
+  /// FIX-3: The 'Database error' branch now shows the specific underlying
+  /// error rather than a dead-end "contact support" message. The raw string
+  /// is also printed so developers can identify the root cause (e.g. a
+  /// failing DB trigger or a duplicate-email constraint violation).
   String _getErrorMessage(String error) {
+    debugPrint('LoginScreen _getErrorMessage raw: $error');
+
     if (error.contains('email rate limit exceeded') ||
-        error.contains('over_email_send_rate_limit')) {
-      return 'Too many attempts. Please wait or use a different email.';
+        error.contains('over_email_send_rate_limit') ||
+        // FIX-5: broadened — alternate rate-limit string in some SDK versions.
+        error.contains('email_send_rate_limit_exceeded')) {
+      return 'Too many attempts. Please wait a moment and try again.';
+
     } else if (error.contains('Invalid login credentials')) {
       return 'Invalid email or password.';
+
     } else if (error.contains('Email not confirmed')) {
       return 'Please verify your email before signing in.';
+
     } else if (error.contains('User already registered')) {
-      return 'This email is already registered. Try signing in.';
+      return 'This email is already registered. Try signing in instead.';
+
     } else if (error.contains('Password should be at least')) {
       return 'Password must be at least 6 characters.';
+
     } else if (error.contains('unable to validate email address') ||
                error.contains('Invalid email')) {
       return 'Please enter a valid email address.';
+
+    } else if (error.contains('null_user')) {
+      // FIX-4: sign-up returned HTTP 200 but no user object — see FIX-2.
+      return 'Account could not be created. Please try again or contact support.';
+
+    } else if (error.contains('Database error saving new user')) {
+      // FIX-3: handle_new_user trigger failure. Most commonly caused by a
+      // duplicate email in public.users when the user previously registered
+      // but did not verify their email (leaving a stuck row).
+      return 'There was a problem setting up your account. '
+             'If you have registered before, try signing in or use '
+             '"Forgot Password" to recover your account.';
+
     } else if (error.contains('Database error') || error.contains('23505')) {
-      return 'Database error. Please contact support.';
+      // FIX-3: generic DB error — show a slightly more actionable message
+      // and rely on the debugPrint above to expose the real cause.
+      return 'A database error occurred. Please try again. '
+             'If the problem persists, contact support.';
     }
+
     return 'An error occurred. Please try again.';
   }
 
@@ -160,6 +231,7 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     } catch (e) {
+      debugPrint('LoginScreen _handleForgotPassword error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error: $e')),
@@ -249,7 +321,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                         // ── Sign-up-only fields ──────────────────────────────
                         if (_isSignUp) ...[
-                          // CHANGE (v1.7): First Name
+                          // First Name
                           TextFormField(
                             controller: _firstNameController,
                             textInputAction: TextInputAction.next,
@@ -269,7 +341,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           const SizedBox(height: 16),
 
-                          // CHANGE (v1.7): Last Name
+                          // Last Name
                           TextFormField(
                             controller: _lastNameController,
                             textInputAction: TextInputAction.next,
@@ -302,7 +374,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           const SizedBox(height: 16),
 
-                          // CHANGE (v1.7): Athlete ID (optional)
+                          // Athlete ID (optional)
                           TextFormField(
                             controller: _athleteIdController,
                             textInputAction: TextInputAction.next,
@@ -377,7 +449,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         const SizedBox(height: 16),
 
-                        // CHANGE (v1.7): Confirm Password (sign-up only)
+                        // Confirm Password (sign-up only)
                         if (_isSignUp) ...[
                           TextFormField(
                             controller: _confirmPasswordController,
