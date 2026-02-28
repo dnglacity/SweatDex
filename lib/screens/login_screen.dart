@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
-import 'team_selection_screen.dart';
 
 // =============================================================================
 // login_screen.dart  (AOD v1.12 — BUG FIX: database connection error)
@@ -90,7 +89,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       if (_isSignUp) {
-        final response = await _authService.signUp(
+        await _authService.signUp(
           email:        _emailController.text.trim(),
           password:     _passwordController.text,
           firstName:    _firstNameController.text.trim(),
@@ -103,20 +102,10 @@ class _LoginScreenState extends State<LoginScreen> {
                           : _athleteIdController.text.trim(),
         );
 
-        // FIX-2: Supabase can return HTTP 200 with a null user when the
-        // handle_new_user DB trigger fails or a rate-limit is hit silently.
-        // Previously this path fell through to the success snackbar.
-        if (response.user == null) {
-          throw Exception(
-            'null_user: Account could not be created. '
-            'Please try again or contact support.',
-          );
-        }
-
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Account created! Please sign in.'),
+              content: Text('Account created! Check your email to verify your account, then sign in.'),
               backgroundColor: Colors.green,
             ),
           );
@@ -127,11 +116,7 @@ class _LoginScreenState extends State<LoginScreen> {
           email:    _emailController.text.trim(),
           password: _passwordController.text,
         );
-        if (mounted) {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => const TeamSelectionScreen()),
-          );
-        }
+        // AuthWrapper's StreamBuilder handles routing to TeamSelectionScreen on signedIn event.
       }
     } catch (e) {
       // FIX-1: Always log the raw error to the console so it's visible

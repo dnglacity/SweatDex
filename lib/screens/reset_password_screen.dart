@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'team_selection_screen.dart';
 
 // =============================================================================
 // reset_password_screen.dart  (AOD v1.10 — NEW)
@@ -59,18 +58,15 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Password updated! You are now signed in.'),
+            content: Text('Password updated! Please sign in with your new password.'),
             backgroundColor: Colors.green,
           ),
         );
-        // Replace the entire navigation stack with TeamSelectionScreen
-        // so the user cannot navigate back to this screen.
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const TeamSelectionScreen()),
-          (route) => false,
-        );
       }
+      await Supabase.instance.client.auth.signOut();
+      // AuthWrapper routes to LoginScreen on signedOut event.
     } catch (e) {
+      debugPrint('ResetPasswordScreen._submit error: $e');
       setState(() {
         _isLoading    = false;
         _errorMessage = 'Could not update password. Please try again.';

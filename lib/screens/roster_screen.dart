@@ -6,7 +6,6 @@ import '../widgets/sport_autocomplete_field.dart'; // CHANGE: extracted widget
 import 'add_player_screen.dart';
 import 'manage_members_screen.dart';
 import 'saved_roster_screen.dart';
-import 'login_screen.dart';
 import 'account_settings_screen.dart';
 import 'team_selection_screen.dart';
 
@@ -620,12 +619,7 @@ class _RosterScreenState extends State<RosterScreen> {
     try {
       _playerService.clearCache();
       await _authService.signOut();
-      if (mounted) {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const LoginScreen()),
-          (route) => false,
-        );
-      }
+      // AuthWrapper's StreamBuilder handles routing to LoginScreen on signedOut event.
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

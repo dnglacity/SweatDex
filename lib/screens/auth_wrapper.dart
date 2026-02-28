@@ -35,6 +35,11 @@ class AuthWrapper extends StatelessWidget {
           );
         }
 
+        if (snapshot.hasError) {
+          debugPrint('AuthWrapper stream error: ${snapshot.error}');
+          return const LoginScreen();
+        }
+
         final authState = snapshot.data;
         final session   = authState?.session;
 

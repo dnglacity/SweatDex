@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../models/app_user.dart';
 import '../services/auth_service.dart';
 import '../services/player_service.dart';
-import 'login_screen.dart';
 
 // =============================================================================
 // account_settings_screen.dart  (AOD v1.7 — updated)
@@ -465,12 +464,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
 
     try {
       await _authService.deleteAccount();
-      if (mounted) {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const LoginScreen()),
-          (route) => false,
-        );
-      }
+      // AuthWrapper routes to LoginScreen when the session is cleared.
     } catch (e) {
       if (mounted) {
         showDialog<void>(

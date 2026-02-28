@@ -3,7 +3,6 @@ import '../services/player_service.dart';
 import '../services/auth_service.dart';
 import '../widgets/sport_autocomplete_field.dart'; // Shared autocomplete widget
 import 'roster_screen.dart';
-import 'login_screen.dart';
 import 'player_self_view_screen.dart';
 import 'account_settings_screen.dart';
 
@@ -173,12 +172,7 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
       // account on this device gets a fresh state.
       _playerService.clearCache();
       await _authService.signOut();
-      if (mounted) {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const LoginScreen()),
-          (route) => false,
-        );
-      }
+      // AuthWrapper's StreamBuilder handles routing to LoginScreen on signedOut event.
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
