@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/player.dart';
 import '../services/player_service.dart';
 import '../services/auth_service.dart';
@@ -482,6 +483,171 @@ class _RosterScreenState extends State<RosterScreen> {
     
   }
 
+  // ── Team Invite ───────────────────────────────────────────────────────────
+
+  Future<void> _showInviteDialog() async {
+    // Loading state lives inside the dialog via StatefulBuilder.
+    String? code;
+    DateTime? expiresAt;
+    String? errorMsg;
+    bool loading = true;
+    bool revoking = false;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            // Kick off the fetch the first time the dialog builds.
+            if (loading && code == null && errorMsg == null) {
+              _playerService.getOrCreateTeamInvite(widget.teamId).then((data) {
+                if (!ctx.mounted) return;
+                setDialogState(() {
+                  code      = data['code'] as String;
+                  expiresAt = data['expires_at'] as DateTime;
+                  loading   = false;
+                });
+              }).catchError((e) {
+                if (!ctx.mounted) return;
+                setDialogState(() {
+                  errorMsg = e.toString().replaceFirst('Exception: ', '');
+                  loading  = false;
+                });
+              });
+            }
+
+            String formatExpiry(DateTime dt) {
+              final diff = dt.difference(DateTime.now());
+              if (diff.inMinutes < 1) return 'Expiring soon';
+              if (diff.inHours < 1)  return 'Expires in ${diff.inMinutes}m';
+              return 'Expires in ${diff.inHours}h ${diff.inMinutes.remainder(60)}m';
+            }
+
+            return AlertDialog(
+              title: const Text('Team Invite Code'),
+              content: SizedBox(
+                width: 280,
+                child: loading
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 24),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    : errorMsg != null
+                        ? Text(errorMsg!, style: const TextStyle(color: Colors.red))
+                        : Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text(
+                                'Share this code with anyone you want to join the team.',
+                                style: TextStyle(fontSize: 13),
+                              ),
+                              const SizedBox(height: 20),
+                              // ── Code display ──────────────────────────
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 24, vertical: 14),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF1A3A6B),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  code!,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 32,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 8,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                formatExpiry(expiresAt!),
+                                style: TextStyle(
+                                    fontSize: 12, color: Colors.grey[600]),
+                              ),
+                              const SizedBox(height: 20),
+                              // ── Copy button ───────────────────────────
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  icon: const Icon(Icons.copy, size: 18),
+                                  label: const Text('Copy Code'),
+                                  onPressed: () {
+                                    Clipboard.setData(
+                                        ClipboardData(text: code!));
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                          content:
+                                              Text('Invite code copied!')),
+                                    );
+                                  },
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              // ── End Invite button ─────────────────────
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  icon: revoking
+                                      ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2))
+                                      : const Icon(Icons.block, size: 18),
+                                  label: Text(
+                                      revoking ? 'Ending...' : 'End Invite'),
+                                  style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.red),
+                                  onPressed: revoking
+                                      ? null
+                                      : () async {
+                                          setDialogState(
+                                              () => revoking = true);
+                                          final messenger =
+                                              ScaffoldMessenger.of(context);
+                                          try {
+                                            await _playerService
+                                                .revokeTeamInvite(
+                                                    widget.teamId);
+                                            if (ctx.mounted) {
+                                              Navigator.of(ctx).pop();
+                                              messenger.showSnackBar(
+                                                const SnackBar(
+                                                    content: Text(
+                                                        'Invite code ended.')),
+                                              );
+                                            }
+                                          } catch (e) {
+                                            setDialogState(() {
+                                              errorMsg = e
+                                                  .toString()
+                                                  .replaceFirst(
+                                                      'Exception: ', '');
+                                              revoking = false;
+                                            });
+                                          }
+                                        },
+                                ),
+                              ),
+                            ],
+                          ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   // ── Overflow menu ─────────────────────────────────────────────────────────
 
   void _showOverflowMenu() async {
@@ -501,6 +667,15 @@ class _RosterScreenState extends State<RosterScreen> {
             Icon(Icons.edit, size: 20),
             SizedBox(width: 12),
             Text('Edit Team'),
+          ]),
+        ),
+      if (_isCoachOrOwner)
+        const PopupMenuItem(
+          value: 'inviteToTeam',
+          child: Row(children: [
+            Icon(Icons.person_add, size: 20),
+            SizedBox(width: 12),
+            Text('Invite to Team'),
           ]),
         ),
       const PopupMenuDivider(),
@@ -561,6 +736,9 @@ class _RosterScreenState extends State<RosterScreen> {
         break;
       case 'editTeam':
         if (_isOwner) await _showEditTeamInline();
+        break;
+      case 'inviteToTeam':
+        await _showInviteDialog();
         break;
       case 'deleteRoster':
         if (_isOwner) await _confirmDeleteRoster();

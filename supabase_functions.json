@@ -92,6 +92,13 @@
   },
   {
     "schema_name": "public",
+    "function_name": "get_or_create_team_invite",
+    "arguments": "p_team_id uuid",
+    "return_type": "record",
+    "security_type": "Security Definer"
+  },
+  {
+    "schema_name": "public",
     "function_name": "get_team_role",
     "arguments": "p_team_id uuid",
     "return_type": "text",
@@ -137,6 +144,20 @@
     "function_name": "purge_unconfirmed_auth_user",
     "arguments": "p_email text",
     "return_type": "text",
+    "security_type": "Security Definer"
+  },
+  {
+    "schema_name": "public",
+    "function_name": "redeem_team_invite",
+    "arguments": "p_code text",
+    "return_type": "record",
+    "security_type": "Security Definer"
+  },
+  {
+    "schema_name": "public",
+    "function_name": "revoke_team_invite",
+    "arguments": "p_team_id uuid",
+    "return_type": "void",
     "security_type": "Security Definer"
   },
   {

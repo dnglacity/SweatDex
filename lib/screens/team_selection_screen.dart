@@ -81,6 +81,8 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
   bool _teamsRefreshing = false; // true on subsequent refreshes (subtle indicator)
   String? _teamsError;
 
+  bool _fabExpanded = false;
+
   /// Cached sports list for autocomplete (loaded once per session).
   List<Map<String, dynamic>> _sports = [];
 
@@ -428,6 +430,98 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
     }
   }
 
+  // ── Enter Invite Code ──────────────────────────────────────────────────────
+
+  Future<void> _showEnterCodeDialog() async {
+    final codeController = TextEditingController();
+    String? errorMsg;
+    bool submitting = false;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          void submit() async {
+            final code = codeController.text.trim();
+            if (code.length != 6) {
+              setDialogState(() => errorMsg = 'Code must be 6 characters.');
+              return;
+            }
+            setDialogState(() { submitting = true; errorMsg = null; });
+            final messenger = ScaffoldMessenger.of(context);
+            try {
+              final result = await _playerService.redeemTeamInvite(code);
+              if (ctx.mounted) {
+                Navigator.pop(ctx);
+                messenger.showSnackBar(SnackBar(
+                  content: Text('Joined ${result['team_name']}!'),
+                ));
+              }
+            } catch (e) {
+              if (ctx.mounted) {
+                setDialogState(() {
+                  errorMsg = e.toString().replaceFirst('Exception: ', '');
+                  submitting = false;
+                });
+              }
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('Enter Invite Code'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: codeController,
+                  autofocus: true,
+                  maxLength: 6,
+                  textCapitalization: TextCapitalization.characters,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => submitting ? null : submit(),
+                  decoration: const InputDecoration(
+                    labelText: 'Team Code',
+                    hintText: 'e.g. A1B2C3',
+                    border: OutlineInputBorder(),
+                    counterText: '',
+                  ),
+                ),
+                if (errorMsg != null) ...[
+                  const SizedBox(height: 8),
+                  Text(errorMsg!,
+                      style: const TextStyle(color: Colors.red, fontSize: 13)),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: submitting ? null : () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: submitting ? null : submit,
+                child: submitting
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : const Text('Join'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => codeController.dispose());
+
+    // Refresh team list so the newly joined team appears.
+    await _refreshTeams();
+  }
+
   // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
@@ -486,7 +580,10 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
           ),
         ],
       ),
-      body: _teamsLoading
+      body: GestureDetector(
+        onTap: _fabExpanded ? () => setState(() => _fabExpanded = false) : null,
+        behavior: HitTestBehavior.translucent,
+        child: _teamsLoading
           // First-load: show full-screen spinner.
           ? const Center(child: CircularProgressIndicator())
           : _teamsError != null
@@ -696,11 +793,43 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
                         },
                       ),
                     ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showCreateTeamDialog,
-        icon: const Icon(Icons.add),
-        label: const Text('New Team'),
-      ),
+      ), // GestureDetector
+      floatingActionButton: _fabExpanded
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                FloatingActionButton.extended(
+                  heroTag: 'enterCode',
+                  backgroundColor: Theme.of(context).colorScheme.secondary,
+                  foregroundColor: Colors.black87,
+                  icon: const Icon(Icons.vpn_key, size: 20),
+                  label: const Text('Enter Code'),
+                  onPressed: () {
+                    setState(() => _fabExpanded = false);
+                    _showEnterCodeDialog();
+                  },
+                ),
+                const SizedBox(height: 12),
+                FloatingActionButton.extended(
+                  heroTag: 'createTeam',
+                  icon: const Icon(Icons.add),
+                  label: const Text('Create a Team'),
+                  onPressed: () {
+                    setState(() => _fabExpanded = false);
+                    _showCreateTeamDialog();
+                  },
+                ),
+              ],
+            )
+          : FloatingActionButton.extended(
+              heroTag: 'addTeam',
+              onPressed: () => setState(() => _fabExpanded = true),
+              icon: const Icon(Icons.add),
+              label: const Text('Add Team'),
+            ),
+      // Dismiss the expanded FAB when tapping anywhere on the body.
+      extendBody: true,
     );
   }
 

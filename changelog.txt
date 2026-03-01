@@ -1,3 +1,16 @@
+v1.12 02.28.2026 Team invite system
+- Added: Team invite code feature — coaches and owners can generate a 6-character alphanumeric code from the Roster screen overflow menu ("Invite to Team")
+- Added: Invite dialog displays the code in a styled box with expiry countdown, a Copy Code button, and an End Invite button to revoke early
+- Added: Invite codes expire automatically after 24 hours; only one active code per team at a time
+- Added: Supabase table team_invites with RLS (managers only) and a partial unique index enforcing one active invite per team
+- Added: get_or_create_team_invite(p_team_id) RPC — returns existing active code or creates a new one
+- Added: revoke_team_invite(p_team_id) RPC — deactivates the current invite code
+- Added: redeem_team_invite(p_code) RPC — validates code, checks for duplicate membership, inserts team_members row with role=player, returns team_id and team_name
+- Added: PlayerService.getOrCreateTeamInvite(), revokeTeamInvite(), redeemTeamInvite()
+- Added: "Add Team" FAB on Team Selection screen now expands into two options: "Enter Code" (above) and "Create a Team" (same position); tapping the body collapses the menu
+- Added: Enter Code dialog — 6-char input with inline validation, loading state, readable error messages for invalid/expired codes and duplicate membership; refreshes team list on success
+- Changed: FAB label changed from "New Team" → "Add Team"
+
 v1.12 02.28.2026 2123 Jersey number uniqueness warning
 - Added: Jersey number uniqueness warning in add_player_screen — when typing a jersey number already assigned to another player on the team, a non-blocking orange warning appears below the field
 - Added: PlayerService.getJerseyNumbers(teamId) — lightweight DB query returning all non-null jersey numbers for a team as an uppercase Set<String>

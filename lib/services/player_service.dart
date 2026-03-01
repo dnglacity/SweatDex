@@ -900,4 +900,55 @@ class PlayerService {
       throw Exception('Error deleting game roster: $e');
     }
   }
+
+  // ===========================================================================
+  // TEAM INVITES
+  // ===========================================================================
+
+  /// Returns the active invite code for [teamId], creating one if needed.
+  /// Only managers (owner / coach / team_manager) may call this.
+  /// Returns a map with keys `code` (String) and `expires_at` (DateTime).
+  Future<Map<String, dynamic>> getOrCreateTeamInvite(String teamId) async {
+    try {
+      final result = await _supabase
+          .rpc('get_or_create_team_invite', params: {'p_team_id': teamId});
+      // RPC returns a list with one row.
+      final row = (result as List).first as Map<String, dynamic>;
+      return {
+        'code': row['code'] as String,
+        'expires_at': DateTime.parse(row['expires_at'] as String).toLocal(),
+      };
+    } catch (e) {
+      throw Exception('Error fetching team invite: $e');
+    }
+  }
+
+  /// Deactivates the active invite code for [teamId].
+  Future<void> revokeTeamInvite(String teamId) async {
+    try {
+      await _supabase.rpc('revoke_team_invite', params: {'p_team_id': teamId});
+    } catch (e) {
+      throw Exception('Error revoking team invite: $e');
+    }
+  }
+
+  /// Redeems a 6-character invite [code] and joins the caller to the team.
+  /// Returns a map with keys `team_id` (String) and `team_name` (String).
+  /// Throws a user-readable exception for invalid/expired codes or duplicate membership.
+  Future<Map<String, dynamic>> redeemTeamInvite(String code) async {
+    try {
+      final result = await _supabase
+          .rpc('redeem_team_invite', params: {'p_code': code.trim().toUpperCase()});
+      final row = (result as List).first as Map<String, dynamic>;
+      return {
+        'team_id':   row['team_id'] as String,
+        'team_name': row['team_name'] as String,
+      };
+    } catch (e) {
+      final msg = e.toString();
+      // Surface the readable Postgres RAISE EXCEPTION message directly.
+      final match = RegExp(r'message: (.+?)(?:,|\})').firstMatch(msg);
+      throw Exception(match?.group(1) ?? 'Error redeeming invite code.');
+    }
+  }
 }

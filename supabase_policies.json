@@ -118,6 +118,15 @@
   },
   {
     "schemaname": "public",
+    "tablename": "team_invites",
+    "policyname": "Managers can view team invites",
+    "roles": "{public}",
+    "operation": "SELECT",
+    "using_expression": "(EXISTS ( SELECT 1\n   FROM (team_members tm\n     JOIN users u ON ((u.id = tm.user_id)))\n  WHERE ((tm.team_id = team_invites.team_id) AND (u.user_id = auth.uid()) AND (tm.role = ANY (ARRAY['owner'::text, 'coach'::text, 'team_manager'::text])))))",
+    "check_expression": null
+  },
+  {
+    "schemaname": "public",
     "tablename": "team_members",
     "policyname": "team_members_delete_self_owner",
     "roles": "{authenticated}",
