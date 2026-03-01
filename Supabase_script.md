@@ -193,7 +193,48 @@ $$;
 
 ---
 
-## Section 7 — Verification
+## Section 7 — Auto-link players on new user sign-up
+
+When a coach adds a player with an email that has no account yet, the player record is saved with `user_id = NULL`. This trigger fires after a new row is inserted into `public.users` (via the `handle_new_user` trigger) and retroactively links any matching unlinked player records.
+
+```sql
+CREATE OR REPLACE FUNCTION public.fn_auto_link_players_on_signup()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  -- For every player record whose athlete_email matches the new user's email
+  -- and that isn't linked yet, set user_id and upsert a team_members row.
+  UPDATE public.players
+  SET user_id = NEW.id
+  WHERE LOWER(TRIM(athlete_email)) = LOWER(TRIM(NEW.email))
+    AND user_id IS NULL;
+
+  -- The existing trigger fn_sync_player_membership_on_link fires on each
+  -- players.user_id update and upserts the team_members row automatically,
+  -- so no explicit team_members INSERT is needed here.
+
+  RETURN NEW;
+END;
+$$;
+
+-- Attach the trigger to public.users (after handle_new_user has inserted the row)
+DROP TRIGGER IF EXISTS trg_auto_link_players_on_signup ON public.users;
+CREATE TRIGGER trg_auto_link_players_on_signup
+  AFTER INSERT ON public.users
+  FOR EACH ROW
+  EXECUTE FUNCTION public.fn_auto_link_players_on_signup();
+```
+
+> **Note:** `fn_sync_player_membership_on_link` (already in place) fires on every
+> `players.user_id` transition from NULL → UUID, so the `team_members` upsert
+> is handled automatically — no duplication required here.
+
+---
+
+## Section 8 — Verification
 
 ```sql
 -- Confirm columns exist and data migrated correctly

@@ -70,7 +70,8 @@ class _PlayerSelfViewScreenState extends State<PlayerSelfViewScreen> {
     if (confirm != true) return;
     _playerService.clearCache();
     await _authService.signOut();
-    // AuthWrapper's StreamBuilder handles routing to LoginScreen on signedOut event.
+    // Pop back to AuthWrapper's root so its StreamBuilder can render LoginScreen.
+    if (mounted) Navigator.popUntil(context, (route) => route.isFirst);
   }
 
   // ── Data loading ──────────────────────────────────────────────────────────
