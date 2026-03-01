@@ -596,6 +596,30 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
             ),
             const SizedBox(height: 16),
 
+            // ── Athlete Email (edit mode only — new players use Page 1) ───
+            if (isEditing) ...[
+              TextFormField(
+                controller: _emailLookupController,
+                keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(
+                  labelText: 'Athlete Email',
+                  hintText: 'athlete@example.com',
+                  prefixIcon: Icon(Icons.email_outlined),
+                  border: OutlineInputBorder(),
+                  helperText:
+                      'Changing this will re-attempt account linking on save',
+                ),
+                validator: (v) {
+                  if (v != null && v.isNotEmpty && !v.contains('@')) {
+                    return 'Enter a valid email';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
+
             // ── Athlete ID ─────────────────────────────────────────────────
             TextFormField(
               controller: _athleteIdController,

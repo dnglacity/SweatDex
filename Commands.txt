@@ -1,5 +1,24 @@
 ------SHIP/PUBLISH BUILD
 
+
+flutter build web --dart-define-from-file=config.json
+
+commit
+
+git subtree push --prefix build/web origin gh-pages
+
+------
+
+
+------DEBUG
+
+flutter run --dart-define-from-file=config.json
+
+------
+
+
+------RESET
+
 flutter clean
 
 flutter pub get
@@ -11,11 +30,5 @@ commit
 git push origin --delete gh-pages
 
 git subtree push --prefix build/web origin gh-pages
-------
-
-
-------DEBUG
-
-flutter run --dart-define-from-file=config.json
 
 ------

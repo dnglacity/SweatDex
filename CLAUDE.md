@@ -19,9 +19,15 @@ All commands require `--dart-define-from-file=config.json` to inject Supabase cr
 flutter run --dart-define-from-file=config.json
 
 # Publish to GitHub Pages (web)
+flutter build web --dart-define-from-file=config.json
+# commit
+git subtree push --prefix build/web origin gh-pages
+
+# Reset (clean rebuild + republish)
 flutter clean
 flutter pub get
 flutter build web --dart-define-from-file=config.json
+# commit
 git push origin --delete gh-pages
 git subtree push --prefix build/web origin gh-pages
 
@@ -106,3 +112,5 @@ All imports within `lib/` use **relative paths** (`../models/player.dart`), not 
 ### Instructions
 
 - Provide script by replacing supabase_script.md if Supabase requires modification.
+- Commit with the following format example using date and time: "01.01.2026 1524".
+- Add comments to changelog.txt with the commit message as the section header. Describe what was added, removed, changed, or fixed.
