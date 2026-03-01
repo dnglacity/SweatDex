@@ -1,3 +1,8 @@
+v1.12 02.28.2026 2123 Jersey number uniqueness warning
+- Added: Jersey number uniqueness warning in add_player_screen — when typing a jersey number already assigned to another player on the team, a non-blocking orange warning appears below the field
+- Added: PlayerService.getJerseyNumbers(teamId) — lightweight DB query returning all non-null jersey numbers for a team as an uppercase Set<String>
+- Changed: In edit mode, the player's own current jersey is excluded from the taken set so editing it back to the same value does not trigger a false warning
+
 v1.12 02.28.2026 Quality of life improvements
 - Added: Pencil (edit) icon on each roster player row between the attendance icon and the menu icon — opens AddPlayerScreen in edit mode directly without going through the popup menu
 - Added: Duplicate option in the game roster inline menu (saved_roster_screen) — prompts for a new name pre-filled as "<original> (Copy)", validates uniqueness (case-insensitive) against existing rosters, copies starters/substitutes/starter_slots to a new row

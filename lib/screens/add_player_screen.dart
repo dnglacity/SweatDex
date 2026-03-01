@@ -89,6 +89,10 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
 
   bool _isSaving = false;
 
+  // Jersey uniqueness warning — loaded once when Page 2 first appears.
+  Set<String> _takenJerseys = {};
+  bool _jerseyWarning = false;
+
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   @override
@@ -98,6 +102,8 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
     if (widget.playerToEdit != null) {
       // Edit mode: skip email lookup, go straight to Page 2 pre-filled.
       _page = 1;
+      // Load taken jerseys after the first frame so context is available.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadTakenJerseys());
       final p = widget.playerToEdit!;
 
       _firstNameController.text = p.firstName;
@@ -179,6 +185,7 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
 
           _page = 1;
         });
+        _loadTakenJerseys();
       } else {
         // No account found — advance without a userId.
         // The auto-link will be retried after save via _attemptAutoLink().
@@ -187,6 +194,7 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
           _foundUserId  = null; // explicit clear
           _page         = 1;
         });
+        _loadTakenJerseys();
       }
     } catch (_) {
       // Non-fatal — advance to Page 2 so the coach can still add the player.
@@ -195,9 +203,41 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
         _foundUserId  = null;
         _page         = 1;
       });
+      _loadTakenJerseys();
     } finally {
       if (mounted) setState(() => _isLookingUp = false);
     }
+  }
+
+  // ── Jersey uniqueness ───────────────────────────────────────────────────────
+
+  /// Fetches taken jersey numbers for the team, then checks the current field.
+  /// Called once when the form advances to Page 2.
+  Future<void> _loadTakenJerseys() async {
+    try {
+      final taken = await _playerService.getJerseyNumbers(widget.teamId);
+      // In edit mode, remove the player's own current jersey so editing it
+      // back to the same value doesn't trigger a false warning.
+      final ownJersey = widget.playerToEdit?.jerseyNumber?.toUpperCase();
+      if (ownJersey != null) taken.remove(ownJersey);
+      if (!mounted) return;
+      setState(() {
+        _takenJerseys = taken;
+        _jerseyWarning = _isJerseyTaken();
+      });
+    } catch (_) {
+      // Non-fatal — skip the warning if we can't fetch.
+    }
+  }
+
+  bool _isJerseyTaken() {
+    final val = _jerseyController.text.trim().toUpperCase();
+    return val.isNotEmpty && _takenJerseys.contains(val);
+  }
+
+  void _onJerseyChanged(String _) {
+    final warn = _isJerseyTaken();
+    if (warn != _jerseyWarning) setState(() => _jerseyWarning = warn);
   }
 
   // ==========================================================================
@@ -446,11 +486,14 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
 
             // Skip: advance to Page 2 without running the lookup.
             OutlinedButton(
-              onPressed: () => setState(() {
-                _foundUserId  = null;
-                _accountFound = false;
-                _page         = 1;
-              }),
+              onPressed: () {
+                setState(() {
+                  _foundUserId  = null;
+                  _accountFound = false;
+                  _page         = 1;
+                });
+                _loadTakenJerseys();
+              },
               child: const Text('Skip — Enter Details Manually'),
             ),
           ],
@@ -535,6 +578,7 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
               controller: _jerseyController,
               textCapitalization: TextCapitalization.characters,
               textInputAction: TextInputAction.next,
+              onChanged: _onJerseyChanged,
               // Limit jersey to 10 characters to prevent layout overflow.
               inputFormatters: [LengthLimitingTextInputFormatter(10)],
               decoration: const InputDecoration(
@@ -545,6 +589,22 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
                 helperText: 'Can include letters (e.g., 12A)',
               ),
             ),
+            if (_jerseyWarning) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded,
+                      size: 16, color: Colors.orange[700]),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Jersey #${_jerseyController.text.trim()} is already assigned '
+                    'to another player on this team.',
+                    style: TextStyle(
+                        color: Colors.orange[700], fontSize: 12),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 16),
 
             // ── Position ───────────────────────────────────────────────────

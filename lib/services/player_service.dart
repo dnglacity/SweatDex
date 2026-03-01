@@ -201,6 +201,19 @@ class PlayerService {
     }
   }
 
+  /// Returns all non-null jersey numbers currently assigned on [teamId].
+  /// Used by AddPlayerScreen to warn when a jersey is already taken.
+  Future<Set<String>> getJerseyNumbers(String teamId) async {
+    final response = await _supabase
+        .from('players')
+        .select('jersey_number')
+        .eq('team_id', teamId)
+        .not('jersey_number', 'is', null);
+    return (response as List<dynamic>)
+        .map((r) => (r['jersey_number'] as String).toUpperCase())
+        .toSet();
+  }
+
   /// Paginated player fetch — powers infinite scroll on the roster screen.
   Future<List<Player>> getPlayersPaginated({
     required String teamId,
