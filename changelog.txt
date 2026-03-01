@@ -1,3 +1,46 @@
+v1.12 02.28.2026 Add COPPA age-gate checkbox to sign-up form
+- Added: _ageConfirmed bool state to LoginScreen, reset on mode toggle
+- Added: "I confirm I am 13 or older" checkbox row displayed in sign-up mode only
+- Changed: _handleSubmit() now blocks sign-up and shows a snackbar if the age checkbox is unchecked
+
+v1.12 02.28.2026 Sanitize jersey number input to prevent XSS and DB bloat
+- Changed: add_player_screen.dart jersey number field now uses FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]')) to block non-alphanumeric characters (e.g., <, >, ", ', ;) at the keyboard level
+- Changed: jersey number max length reduced from 10 to 4 characters (covers 0–999 plus one letter suffix such as 12A)
+- Added: _sanitizeJersey() helper strips non-alphanumeric chars and clamps to 4 chars at save time as defense-in-depth against programmatic API calls that bypass UI formatters
+
+v1.12 02.28.2026 Fix email enumeration vulnerability in changeEmail
+- Fixed: auth_service.dart changeEmail() no longer leaks whether an email is already registered via Postgres duplicate-key/unique-constraint error messages
+- Changed: all failure paths in the RPC catch block return the same generic message ("Email change failed. Please try again later.") regardless of cause
+- Changed: removed raw $e/$msg from user-facing exception strings to prevent Postgres error text from surfacing in the UI
+- Changed: debugPrint calls no longer include email addresses or raw Postgres error strings
+
+v1.12 02.28.2026 Disable OfflineCacheService on web target
+- Changed: offline_cache_service.dart — all public methods (init, writeList, readList, lastUpdated, invalidate, clearAll, evictExpired) now return early (no-op / null) when kIsWeb is true
+- Reason: web browsers provide no secure on-device keystore; persisting PII in browser storage is inappropriate; web always fetches fresh data from Supabase
+- No caller changes required; kIsWeb is a compile-time constant so the dead code is tree-shaken on non-web builds
+
+v1.12 02.28.2026 Replace shared_preferences with flutter_secure_storage for PII
+- Changed: offline_cache_service.dart now uses flutter_secure_storage (iOS Keychain / Android EncryptedSharedPreferences) instead of shared_preferences so cached player and game-roster data (PII) is encrypted at rest
+- Changed: pubspec.yaml replaces shared_preferences ^2.3.2 with flutter_secure_storage ^9.2.2
+- Removed: _ensureInitialised() / SharedPreferences instance management; replaced by stateless FlutterSecureStorage instance
+- Changed: clearAll() and evictExpired() now iterate via readAll() (returns Map<String,String>) instead of getKeys()
+
+v1.12 02.28.2026 Remove athlete ID
+- Removed: athlete_id field from Player model, AppUser model, AuthService (signUp, updateProfile, getCurrentUserProfile), PlayerService (_kUserColumns, _kPlayerColumns), add_player_screen.dart (controller, UI field, pre-fill, save logic), login_screen.dart (controller, UI field, sign-up call), roster_screen.dart (subtitle and detail dialog display)
+- Changed: Supabase_script.md updated with ALTER TABLE migration to drop athlete_id from public.players and public.users
+- Changed: security_compliance.md updated to remove athlete_id reference
+
+v1.12 02.28.2026 Remove grade level
+- Removed: grade and grade_updated_at columns from Player model, player_service.dart (_kPlayerColumns), add_player_screen.dart (grade dropdown UI + _selectedGrade state), roster_screen.dart (grade display in subtitle and detail dialog)
+- Changed: supabase_schema.json updated to remove grade columns from players table
+- Changed: Supabase_script.md updated with ALTER TABLE migration to drop grade and grade_updated_at columns
+- Changed: security_compliance.md updated to remove grade-level references from COPPA and FERPA sections
+
+v1.12 02.28.2026 Atomic sole-owner guard for remove_member_from_team
+- Added: remove_member_from_team(p_team_id uuid, p_user_id uuid) SECURITY DEFINER RPC — performs caller auth check, sole-owner count (FOR SHARE row lock), player un-link, and membership DELETE inside a single transaction to prevent TOCTOU race where two concurrent removals could both pass the owner count and leave the team ownerless
+- Changed: PlayerService.removeMemberFromTeam() now delegates entirely to the remove_member_from_team RPC; all client-side owner count queries removed
+- Fixed: security_compliance.md TOCTOU finding for removeMemberFromTeam marked resolved
+
 v1.12 02.28.2026 Scrub deleted player data from historical game rosters
 - Added: scrub_deleted_player_from_rosters(p_player_id uuid) Postgres helper — removes all entries matching the deleted player from starters and substitutes JSONB arrays across every game_rosters row
 - Added: delete_player(p_player_id uuid) SECURITY DEFINER RPC — authorises caller (owner/coach/team_manager), scrubs rosters, then deletes the player row

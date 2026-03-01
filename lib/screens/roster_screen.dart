@@ -1374,12 +1374,6 @@ class _RosterScreenState extends State<RosterScreen> {
     if (player.nickname != null && player.nickname!.isNotEmpty) {
       parts.add('"${player.nickname}"');
     }
-    if (player.athleteId != null && player.athleteId!.isNotEmpty) {
-      parts.add('ID: ${player.athleteId}');
-    }
-    if (player.grade != null) {
-      parts.add(player.displayGrade);
-    }
     if (player.hasLinkedAccount) {
       parts.add('✓ Linked');
     }
@@ -1406,13 +1400,9 @@ class _RosterScreenState extends State<RosterScreen> {
               _detailRow('Position', player.position!),
             if (player.nickname != null && player.nickname!.isNotEmpty)
               _detailRow('Nickname', player.nickname!),
-            if (player.athleteId != null && player.athleteId!.isNotEmpty)
-              _detailRow('Athlete ID', player.athleteId!),
             if (player.athleteEmail != null &&
                 player.athleteEmail!.isNotEmpty)
               _detailRow('Athlete Email', player.athleteEmail!),
-            if (player.grade != null)
-              _detailRow('Grade', player.displayGrade),
             if (player.guardianEmail != null &&
                 player.guardianEmail!.isNotEmpty)
               _detailRow('Guardian Email', player.guardianEmail!),

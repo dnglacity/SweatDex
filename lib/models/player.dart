@@ -25,20 +25,11 @@ class Player {
   final String firstName;
   final String lastName;
 
-  // CHANGE (v1.7): renamed from studentId.
-  final String? athleteId;
-
   // CHANGE (v1.7): renamed from studentEmail.
   final String? athleteEmail;
 
   // CHANGE (v1.7): parent/guardian email (optional).
   final String? guardianEmail;
-
-  // CHANGE (v1.7): academic grade (9–12). Auto-incremented July 1 server-side.
-  final int? grade;
-
-  /// Date the grade was last auto-incremented.
-  final DateTime? gradeUpdatedAt;
 
   final String? jerseyNumber;
   final String? nickname;
@@ -55,11 +46,8 @@ class Player {
     required this.teamId,
     required this.firstName,
     required this.lastName,
-    this.athleteId,
     this.athleteEmail,
     this.guardianEmail,
-    this.grade,
-    this.gradeUpdatedAt,
     this.jerseyNumber,
     this.nickname,
     this.position,
@@ -70,9 +58,6 @@ class Player {
 
   // ── Deserialise from Supabase row ──────────────────────────────────────────
   factory Player.fromMap(Map<String, dynamic> map) {
-    // Support both old column names (student_*) and new (athlete_*).
-    final athleteId    = map['athlete_id']   as String?
-                      ?? map['student_id']   as String?;
     final athleteEmail = map['athlete_email'] as String?
                       ?? map['student_email'] as String?;
 
@@ -84,13 +69,8 @@ class Player {
       teamId:         map['team_id'] as String? ?? '',
       firstName:      first,
       lastName:       last,
-      athleteId:      athleteId,
       athleteEmail:   athleteEmail,
       guardianEmail:  map['guardian_email'] as String?,
-      grade:          map['grade'] as int?,
-      gradeUpdatedAt: map['grade_updated_at'] != null
-                        ? DateTime.tryParse(map['grade_updated_at'] as String)
-                        : null,
       jerseyNumber:   map['jersey_number']?.toString(),
       nickname:       map['nickname']  as String?,
       position:       map['position']  as String?,
@@ -108,10 +88,8 @@ class Player {
       'team_id':        teamId,
       'first_name':     firstName,
       'last_name':      lastName,
-      'athlete_id':     athleteId,
       'athlete_email':  athleteEmail,
       'guardian_email': guardianEmail,
-      'grade':          grade,
       'jersey_number':  jerseyNumber,
       'nickname':       nickname,
       'position':       position,
@@ -126,11 +104,8 @@ class Player {
     String? teamId,
     String? firstName,
     String? lastName,
-    String? athleteId,
     String? athleteEmail,
     String? guardianEmail,
-    int?    grade,
-    DateTime? gradeUpdatedAt,
     String? jerseyNumber,
     String? nickname,
     String? position,
@@ -143,11 +118,8 @@ class Player {
       teamId:         teamId         ?? this.teamId,
       firstName:      firstName      ?? this.firstName,
       lastName:       lastName       ?? this.lastName,
-      athleteId:      athleteId      ?? this.athleteId,
       athleteEmail:   athleteEmail   ?? this.athleteEmail,
       guardianEmail:  guardianEmail  ?? this.guardianEmail,
-      grade:          grade          ?? this.grade,
-      gradeUpdatedAt: gradeUpdatedAt ?? this.gradeUpdatedAt,
       jerseyNumber:   jerseyNumber   ?? this.jerseyNumber,
       nickname:       nickname       ?? this.nickname,
       position:       position       ?? this.position,
@@ -165,18 +137,6 @@ class Player {
   String get displayJersey   => jerseyNumber ?? '-';
   String get displayName     => nickname != null ? '$name ($nickname)' : name;
   String get displayPosition => position?.isNotEmpty == true ? position! : '-';
-
-  /// Grade display string: "10th", "11th", etc. or "—" if not set.
-  String get displayGrade {
-    if (grade == null) return '—';
-    switch (grade!) {
-      case 9:  return '9th (Freshman)';
-      case 10: return '10th (Sophomore)';
-      case 11: return '11th (Junior)';
-      case 12: return '12th (Senior)';
-      default: return 'Grade $grade';
-    }
-  }
 
   /// True when this player row is linked to an app account.
   bool get hasLinkedAccount => userId != null && userId!.isNotEmpty;

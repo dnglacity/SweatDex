@@ -18,10 +18,9 @@ dependencies:
   # Supabase client SDK — provides auth, realtime streams, and PostgREST queries.
   supabase_flutter: ^2.12.0
 
-  # Lightweight key-value persistence for the offline cache (OfflineCacheService).
-  # ADDED: was used by offline_cache_service.dart but missing from pubspec, causing
-  # a compile error on clean builds.
-  shared_preferences: ^2.3.2
+  # Encrypted key-value storage for the offline cache (OfflineCacheService).
+  # Uses platform secure storage (Keychain/Keystore) to protect PII at rest.
+  flutter_secure_storage: ^9.2.2
 
 dev_dependencies:
   flutter_test:

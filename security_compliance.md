@@ -1,5 +1,5 @@
 Apex On Deck (AOD) — Security & Compliance Overview
-                             **Version:** v1.12 | **Date:** 2026-02-28
+                             **Version:** v1.12 | **Date:** 2026-02-28 (reviewed 2026-02-28)
 
                              ---
 
@@ -110,7 +110,7 @@ Apex On Deck (AOD) — Security & Compliance Overview
                              ### 3.2 Data at Rest
 
                              - Supabase PostgreSQL database (hosted on Supabase cloud infrastructure)
-                             - `shared_preferences` device-local storage (JSON, unencrypted by default on Android/iOS)
+                             - `flutter_secure_storage` device-local cache (iOS Keychain / Android Keystore with `EncryptedSharedPreferences`; `localStorage` on Web — unencrypted)
 
                              ### 3.3 Data in Transit
 
@@ -134,8 +134,8 @@ Apex On Deck (AOD) — Security & Compliance Overview
                              - **Role-based access model:** Five roles — `owner`, `coach`, `player`, `team_parent`, `team_manager`
                              - **RLS on all tables:** Team and player queries are filtered server-side by the authenticated user's membership in `team_members`
                              - **SECURITY DEFINER RPCs for privileged operations:** `create_team`, `add_member_to_team`, `delete_account`, `change_user_email`, `link_player_to_user`,
-                             `link_guardian_to_player`, `transfer_ownership`, `get_or_create_team_invite`, `redeem_team_invite`, `revoke_team_invite` — these run as the function owner, bypassing
-                             client-supplied JWTs for operations that require elevated trust
+                             `link_guardian_to_player`, `transfer_ownership`, `get_or_create_team_invite`, `redeem_team_invite`, `revoke_team_invite`, `remove_member_from_team`, `delete_player`,
+                             `get_current_user_id` — these run as the function owner, bypassing client-supplied JWTs for operations that require elevated trust
                              - **Sole-owner guard:** `removeMemberFromTeam` checks for at least two owners before allowing the removal of an owner role
                              - **Client-side role checks** (defense-in-depth): `_isTeamOwner()` verifies caller role before destructive team operations; `updateMemberRole()` blocks direct promotion to       
                              `owner`
@@ -148,9 +148,11 @@ Apex On Deck (AOD) — Security & Compliance Overview
 
                              ### 4.4 Offline Cache Security
 
+                             - **Encrypted storage (v1.12):** `OfflineCacheService` now uses `flutter_secure_storage` (iOS Keychain / Android Keystore with `EncryptedSharedPreferences`) instead of plaintext `shared_preferences`. All cached PII (player names, emails, roster data) is encrypted at rest on mobile platforms.
                              - **Cache wipe on sign-out:** `clearCache()` calls `_cache.clearAll()` to remove all on-device data, preventing stale data exposure on shared devices (e.g., gym iPads)
                              - **TTL enforcement:** Cache entries expire after 60 minutes by default; eviction runs in the background at app launch
                              - **Key namespacing:** Cache keys use the `aod_cache_` prefix to prevent accidental overlap with other libraries
+                             - **Web caveat:** On the Web target (GitHub Pages), `flutter_secure_storage` falls back to `localStorage`, which remains unencrypted and accessible to same-origin JavaScript
 
                              ### 4.5 Secrets Management
 
@@ -169,9 +171,7 @@ Apex On Deck (AOD) — Security & Compliance Overview
                               (or with actual knowledge they are collecting data from children under 13).
 
                              **Concerns:**
-                             - The app collects names, email addresses, grade levels, athlete IDs, and guardian emails for minors
-                             - Grade levels of 9-12 imply ages of roughly 14-18, reducing but not eliminating the COPPA risk window (e.g., a 12-year-old in 9th grade is theoretically possible; future        
-                             expansion to lower grades would trigger COPPA directly)
+                             - The app collects names, email addresses, athlete IDs, and guardian emails for minors
                              - There is no age-gate or parental consent flow at sign-up
                              - Guardian email is collected but there is no formal parental consent verification mechanism
 
@@ -186,12 +186,10 @@ Apex On Deck (AOD) — Security & Compliance Overview
 
                              **Risk Level: MEDIUM-HIGH**
 
-                             FERPA protects educational records of students at schools receiving federal funding. If AOD is used by public school coaches and stores athlete IDs, grade levels, or attendance  
+                             FERPA protects educational records of students at schools receiving federal funding. If AOD is used by public school coaches and stores athlete IDs or attendance
                              records linked to students, it may fall under FERPA's definition of an "educational record" or a system that processes such records on behalf of a school.
 
                              **Concerns:**
-                             - `athlete_id` fields may map directly to school-issued student IDs
-                             - `grade` and `grade_updated_at` fields constitute academic-level data
                              - Attendance records (status: present/absent/late/excused) may be considered educational records if used in conjunction with school operations
                              - If coaches are school employees and AOD is used on behalf of the school, AOD could be classified as a "school official" with legitimate educational interest — requiring a      
                              formal data-sharing agreement
@@ -212,36 +210,32 @@ Apex On Deck (AOD) — Security & Compliance Overview
                              **Concerns:**
                              - No explicit privacy policy or consent banner is present in the current UI
                              - No mechanism to export all personal data on user request (GDPR Article 20 — data portability)
-                             - Account deletion (`deleteAccount`) removes auth and public data, but it is unclear whether all derived data (game roster JSONB blobs containing player names/IDs, cache entries,
-                              logs) are fully purged
-                             - `shared_preferences` on-device data is not encrypted; if a device is compromised, cached PII (names, emails, roster data) may be exposed
+                             - ~~Account deletion removes auth and public data without scrubbing game roster JSONB entries~~ **RESOLVED (v1.12):** `deletePlayer()` now invokes the `delete_player` SECURITY DEFINER RPC which atomically removes the player row and scrubs all game roster JSONB entries referencing that player before deletion
+                             - ~~`shared_preferences` on-device data is not encrypted; if a device is compromised, cached PII may be exposed~~ **RESOLVED (v1.12):** Cache migrated to `flutter_secure_storage` (iOS Keychain / Android Keystore); Web target still uses `localStorage` (unencrypted)
                              - No documented data retention policy
 
                              **Recommendations:**
                              - Add a privacy policy accessible from the login screen
                              - Implement a "Download my data" export feature
-                             - Audit what the `delete_account` RPC removes; ensure game roster JSONB entries referencing the deleted player are also scrubbed
-                             - Consider encrypting `shared_preferences` data using `flutter_secure_storage` for sensitive fields
+                             - ~~Audit what the `delete_account` RPC removes; ensure game roster JSONB entries referencing the deleted player are also scrubbed~~ **DONE (v1.12)**
+                             - ~~Consider encrypting `shared_preferences` data using `flutter_secure_storage` for sensitive fields~~ **DONE (v1.12)** — mobile resolved; Web `localStorage` still open
                              - Document and enforce a data retention policy (e.g., inactive accounts deleted after 2 years)
 
                              ---
 
                              ### 5.4 On-Device Cache Exposure
 
-                             **Risk Level: MEDIUM**
+                             **Risk Level: LOW (mobile — v1.12) / MEDIUM (Web)**
 
-                             The `OfflineCacheService` persists player PII and game roster data to `shared_preferences`, which is stored in plaintext on the device file system.
+                             ~~The `OfflineCacheService` persists player PII and game roster data to `shared_preferences`, which is stored in plaintext on the device file system.~~ **RESOLVED for mobile (v1.12):** `OfflineCacheService` was migrated to `flutter_secure_storage`, which uses the iOS Keychain and Android Keystore (with `EncryptedSharedPreferences`) to protect cached PII at rest.
 
-                             **Concerns:**
-                             - On Android, `shared_preferences` data is stored in an XML file accessible to root users and via ADB backup on unprotected devices
-                             - On iOS, `NSUserDefaults`-backed storage is generally protected by the iOS sandbox but is not encrypted at the NSFileProtection level
-                             - On Web (GitHub Pages), `shared_preferences` uses `localStorage`, which is accessible to any JavaScript running on the same origin and is not encrypted
-                             - Cached data includes full player names, emails, guardian emails, and athlete IDs
+                             **Remaining concerns:**
+                             - On Web (GitHub Pages), `flutter_secure_storage` falls back to `localStorage`, which is accessible to any same-origin JavaScript and is not encrypted — the plaintext cache exposure risk remains on the Web target
+                             - Cached data still includes full player names, emails, guardian emails, and athlete IDs; payload minimization has not been applied
 
                              **Recommendations:**
-                             - For mobile, use `flutter_secure_storage` or encrypt the cache envelope before writing to `shared_preferences`
-                             - For Web, evaluate whether offline caching is necessary; if so, use IndexedDB with encryption or limit what PII is cached
-                             - Reduce PII in cached payloads to the minimum necessary (e.g., cache name and jersey number but not email or athlete ID)
+                             - For Web, evaluate whether offline caching is necessary; if so, limit PII cached to the minimum necessary (e.g., name and jersey number only — not email or athlete ID)
+                             - Consider disabling offline cache entirely on the Web target given the `localStorage` exposure risk
 
                              ---
 
@@ -273,8 +267,8 @@ Apex On Deck (AOD) — Security & Compliance Overview
                              RPC
                              - A modified client could potentially bypass this check and issue a direct `UPDATE team_members SET role='owner'` if RLS does not explicitly block self-promotion or
                              promotion-to-owner by non-owners
-                             - The `removeMemberFromTeam` sole-owner guard is implemented client-side (counts owners with a SELECT) rather than inside an atomic RPC, creating a potential TOCTOU
-                             (time-of-check/time-of-use) race condition if two requests fire simultaneously
+                             - ~~The `removeMemberFromTeam` sole-owner guard is implemented client-side (counts owners with a SELECT) rather than inside an atomic RPC, creating a potential TOCTOU (time-of-check/time-of-use) race condition if two requests fire simultaneously~~ **FIXED (v1.12):** `removeMemberFromTeam` now delegates to the `remove_member_from_team` SECURITY DEFINER RPC which performs the owner count and DELETE inside a single transaction with row-level locking (`FOR UPDATE` / `FOR SHARE`).
+                             - ~~`deletePlayer` removed the player row without scrubbing game roster JSONB entries~~ **FIXED (v1.12):** `deletePlayer` now calls the `delete_player` SECURITY DEFINER RPC which atomically scrubs all roster references and deletes the player row in a single transaction.
 
                              **Recommendations:**
                              - Move the owner-promotion block and the sole-owner guard into SECURITY DEFINER RPCs so they are enforced at the database layer
@@ -342,7 +336,7 @@ Apex On Deck (AOD) — Security & Compliance Overview
                              | FERPA | Medium-High — school athlete data, grade/attendance records | No DPA; no data-export feature | **High** |
                              | GDPR | Medium — EU users possible | No privacy policy; no data portability | **Medium** |
                              | CCPA | Medium — California users likely | No privacy policy; no opt-out mechanism | **Medium** |
-                             | General data security | All deployments | Strong RLS + SECURITY DEFINER RPCs; cache wipe on logout | **Ongoing** |
+                             | General data security | All deployments | Strong RLS + SECURITY DEFINER RPCs; encrypted mobile cache (v1.12); cache wipe on logout; JSONB scrub on player delete (v1.12) | **Ongoing** |
 
                              ---
 
@@ -350,7 +344,8 @@ Apex On Deck (AOD) — Security & Compliance Overview
 
                              1. **Add a privacy policy** accessible from the login screen before public launch (addresses GDPR, CCPA, and App Store requirements)
                              2. **Implement parental consent or age-gate** for users under 13 (COPPA)
-                             3. **Audit the `delete_account` RPC** to ensure full data deletion, including JSONB roster entries that reference the deleted player
-                             4. **Encrypt on-device cache** or reduce PII stored in `shared_preferences` / `localStorage`
-                             5. **Move role-enforcement logic into SECURITY DEFINER RPCs** (sole-owner guard, promotion-to-owner block)
-                             6. **Audit all raw error strings** passed to the UI and replace with user-friendly messages
+                             3. ~~**Audit the `delete_account` RPC** to ensure full data deletion, including JSONB roster entries that reference the deleted player~~ **DONE (v1.12)** — `delete_player` RPC scrubs JSONB roster references atomically
+                             4. ~~**Encrypt on-device cache** or reduce PII stored in `shared_preferences` / `localStorage`~~ **PARTIALLY DONE (v1.12)** — mobile resolved via `flutter_secure_storage`; Web `localStorage` still exposes PII
+                             5. **Move role-enforcement logic into SECURITY DEFINER RPCs** (promotion-to-owner block for `updateMemberRole` — sole-owner guard already resolved in v1.12)
+                             6. **Audit all raw error strings** passed to the UI and replace with user-friendly messages (open: `changeEmail` `Database update failed: $msg` and auth update failure still expose raw error text)
+                             7. **Disable or minimize offline cache on Web** to eliminate `localStorage` PII exposure

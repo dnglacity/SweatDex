@@ -45,12 +45,12 @@ import 'offline_cache_service.dart';
 /// Columns fetched from public.users.
 const _kUserColumns =
     'id, user_id, first_name, last_name, nickname, '
-    'athlete_id, email, organization, created_at';
+    'email, organization, created_at';
 
 /// Columns fetched from public.players.
 const _kPlayerColumns =
-    'id, team_id, user_id, first_name, last_name, athlete_id, athlete_email, '
-    'guardian_email, grade, grade_updated_at, jersey_number, '
+    'id, team_id, user_id, first_name, last_name, athlete_email, '
+    'guardian_email, jersey_number, '
     'nickname, position, status, created_at';
 
 /// Columns fetched from public.team_members with a joined users sub-select.
@@ -126,6 +126,19 @@ class PlayerService {
     _cache.clearAll();
   }
 
+  // ---------------------------------------------------------------------------
+  // Error helper
+  // ---------------------------------------------------------------------------
+
+  /// Logs the raw error and re-throws a sanitised exception.
+  /// [PostgrestException] messages are replaced with a generic string to
+  /// prevent table names, column names, and constraint names from reaching
+  /// the UI.
+  Never _dbError(dynamic e, String message) {
+    debugPrint('$message: $e');
+    throw Exception(e is PostgrestException ? 'Update failed.' : message);
+  }
+
   // ===========================================================================
   // SPORTS
   // ===========================================================================
@@ -164,8 +177,7 @@ class PlayerService {
           .single();
       return result['id'] as String;
     } catch (e) {
-      debugPrint('addPlayerAndReturnId error: $e');
-      throw Exception('Error adding player: $e');
+      _dbError(e, 'Error adding player.');
     }
   }
 
@@ -197,7 +209,7 @@ class PlayerService {
             await _cache.readList(OfflineCacheService.playersKey(teamId));
         if (cached != null) return _mapPlayers(cached);
       }
-      throw Exception('Error fetching players: $e');
+      _dbError(e, 'Error fetching players.');
     }
   }
 
@@ -243,7 +255,7 @@ class PlayerService {
               .toList();
         }
       }
-      throw Exception('Error fetching players: $e');
+      _dbError(e, 'Error fetching players.');
     }
   }
 
@@ -289,8 +301,7 @@ class PlayerService {
           .update(player.toMap())
           .eq('id', player.id);
     } catch (e) {
-      debugPrint('updatePlayer error: $e');
-      throw Exception('Error updating player: $e');
+      _dbError(e, 'Error updating player.');
     }
   }
 
@@ -302,7 +313,7 @@ class PlayerService {
           .update({'status': status})
           .eq('id', playerId);
     } catch (e) {
-      throw Exception('Error updating status: $e');
+      _dbError(e, 'Error updating status.');
     }
   }
 
@@ -639,67 +650,15 @@ class PlayerService {
 
   /// Removes [userId] (public.users.id) from [teamId].
   ///
-  /// FIX-2: un-links players.user_id BEFORE deleting the team_members row to
-  /// avoid a potential FK violation if a constraint exists from team_members
-  /// back to players.
+  /// Delegates entirely to the `remove_member_from_team` SECURITY DEFINER RPC
+  /// so that the sole-owner guard and the delete are performed atomically
+  /// inside a single DB transaction, preventing TOCTOU races.
   Future<void> removeMemberFromTeam(String teamId, String userId) async {
     try {
-      final currentUserId = await _getCurrentUserId();
-      if (currentUserId == null) throw Exception('Not logged in.');
-
-      final isRemovingSelf = userId == currentUserId;
-
-      if (!isRemovingSelf) {
-        // Verify the caller is an owner before removing someone else.
-        final ownerRow = await _supabase
-            .from('team_members')
-            .select('role')
-            .eq('team_id', teamId)
-            .eq('user_id', currentUserId)
-            .maybeSingle();
-        if (ownerRow == null || ownerRow['role'] != 'owner') {
-          throw Exception('Only team owners can remove other members.');
-        }
-      }
-
-      // Load the target member's current role and player link.
-      final memberRow = await _supabase
-          .from('team_members')
-          .select('role, player_id')
-          .eq('team_id', teamId)
-          .eq('user_id', userId)
-          .single();
-
-      // Prevent removing the sole owner.
-      if (memberRow['role'] == 'owner') {
-        final owners = await _supabase
-            .from('team_members')
-            .select('id')
-            .eq('team_id', teamId)
-            .eq('role', 'owner');
-        if ((owners as List).length <= 1) {
-          throw Exception(
-            'Cannot remove the only owner. Transfer ownership first.',
-          );
-        }
-      }
-
-      // FIX-2: un-link the player row FIRST to avoid FK issues.
-      final linkedPlayerId = memberRow['player_id'] as String?;
-      if (linkedPlayerId != null) {
-        await _supabase
-            .from('players')
-            .update({'user_id': null})
-            .eq('id', linkedPlayerId);
-      }
-
-      // Now safe to delete the membership row.
-      await _supabase
-          .from('team_members')
-          .delete()
-          .eq('team_id', teamId)
-          .eq('user_id', userId);
-
+      await _supabase.rpc('remove_member_from_team', params: {
+        'p_team_id': teamId,
+        'p_user_id': userId,
+      });
       _invalidateTeamCache();
     } catch (e) {
       throw Exception('Error removing member: $e');

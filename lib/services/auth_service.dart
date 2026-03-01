@@ -47,8 +47,8 @@ class AuthService {
   /// FIX-2: Validates response.user != null. If null, throws a typed exception
   ///   so login_screen._getErrorMessage() can show a specific message.
   ///
-  /// Organisation and athlete_id are embedded in raw_user_meta_data.
-  /// The handle_new_user DB trigger reads them and writes them to
+  /// Organisation is embedded in raw_user_meta_data.
+  /// The handle_new_user DB trigger reads it and writes it to
   /// public.users immediately — no follow-up UPDATE or retry loop needed.
   Future<AuthResponse> signUp({
     required String email,
@@ -56,7 +56,6 @@ class AuthService {
     required String firstName,
     required String lastName,
     String? organization,
-    String? athleteId,
   }) async {
     try {
       final response = await _supabase.auth.signUp(
@@ -69,8 +68,6 @@ class AuthService {
           'name': '${firstName.trim()} ${lastName.trim()}'.trim(),
           if (organization != null && organization.isNotEmpty)
             'organization': organization.trim(),
-          if (athleteId != null && athleteId.isNotEmpty)
-            'athlete_id': athleteId.trim(),
         },
       );
 
@@ -132,7 +129,7 @@ class AuthService {
       return await _supabase
           .from('users')
           .select(
-            'id, user_id, first_name, last_name, nickname, athlete_id, '
+            'id, user_id, first_name, last_name, nickname, '
             'email, organization, created_at',
           )
           .eq('user_id', authUser.id)
@@ -157,7 +154,6 @@ class AuthService {
     String? nickname,
     bool clearNickname = false,
     String? organization,
-    String? athleteId,
   }) async {
     final authUser = currentUser;
     if (authUser == null) throw Exception('Not logged in.');
@@ -173,7 +169,6 @@ class AuthService {
     }
 
     if (organization != null) updates['organization'] = organization.trim();
-    if (athleteId    != null) updates['athlete_id']   = athleteId.trim();
 
     if (updates.isEmpty) return;
 
@@ -226,23 +221,27 @@ class AuthService {
         'p_new_email': cleanNew,
       });
     } catch (e) {
-      debugPrint('changeEmail RPC error: $e');
-      final msg = e.toString();
-      if (msg.contains('already in use') || msg.contains('already registered')) {
-        throw Exception(
-            'That email address is already in use by another account.');
+      debugPrint('changeEmail RPC error');
+      final msg = e.toString().toLowerCase();
+      // Treat duplicate-key / unique-constraint errors identically to any other
+      // failure so we don't confirm whether an email is already registered.
+      if (msg.contains('duplicate key') ||
+          msg.contains('unique constraint') ||
+          msg.contains('already in use') ||
+          msg.contains('already registered')) {
+        throw Exception('Email change failed. Please try again later.');
       }
-      throw Exception('Database update failed: $msg');
+      throw Exception('Email change failed. Please try again later.');
     }
 
     // Step 3: update the email in Supabase Auth (triggers confirmation email).
     try {
       await _supabase.auth.updateUser(UserAttributes(email: cleanNew));
     } catch (e) {
-      debugPrint('changeEmail auth updateUser error: $e');
+      debugPrint('changeEmail auth updateUser error');
       throw Exception(
         'Profile updated but auth email change failed. '
-        'Please contact support. Details: $e',
+        'Please contact support.',
       );
     }
   }

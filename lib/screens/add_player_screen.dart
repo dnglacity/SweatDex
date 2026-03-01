@@ -36,7 +36,7 @@ import '../widgets/error_dialog.dart';
 //
 // All v1.8 behaviours retained:
 //   – 2-page flow (email lookup → details form).
-//   – Grade dropdown, guardian link, position, nickname, athlete ID.
+//   – Guardian link, position, nickname.
 //   – Auto-link guardian email via `_attemptGuardianLink()`.
 //   – Deferred TextEditingController disposal pattern.
 // =============================================================================
@@ -81,11 +81,7 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
   final _jerseyController    = TextEditingController();
   final _positionController  = TextEditingController();
   final _nicknameController  = TextEditingController();
-  final _athleteIdController = TextEditingController();
   final _guardianController  = TextEditingController();
-
-  // Selected grade (9–12 or null = not set).
-  int? _selectedGrade;
 
   bool _isSaving = false;
 
@@ -112,9 +108,7 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
       _jerseyController.text    = p.jerseyNumber  ?? '';
       _positionController.text  = p.position      ?? '';
       _nicknameController.text  = p.nickname       ?? '';
-      _athleteIdController.text = p.athleteId      ?? '';
       _guardianController.text  = p.guardianEmail  ?? '';
-      _selectedGrade            = p.grade;
 
       // Pre-fill the email lookup field so it is visible on Page 2.
       if (p.athleteEmail != null) {
@@ -135,7 +129,6 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
     _jerseyController.dispose();
     _positionController.dispose();
     _nicknameController.dispose();
-    _athleteIdController.dispose();
     _guardianController.dispose();
     super.dispose();
   }
@@ -148,7 +141,7 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
   ///
   /// On success:
   ///   – Sets `_foundUserId` to the resolved public.users.id.
-  ///   – Pre-fills the name and athlete ID fields on Page 2.
+  ///   – Pre-fills the name fields on Page 2.
   ///   – Advances to Page 2.
   ///
   /// On failure or no account:
@@ -178,10 +171,9 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
           // can be passed into the Player object during _savePlayer().
           _foundUserId = userRow['id'] as String?;
 
-          // Pre-fill name and athlete ID from the account row.
+          // Pre-fill name from the account row.
           _firstNameController.text = userRow['first_name'] as String? ?? '';
           _lastNameController.text  = userRow['last_name']  as String? ?? '';
-          _athleteIdController.text = userRow['athlete_id'] as String? ?? '';
 
           _page = 1;
         });
@@ -235,6 +227,13 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
     return val.isNotEmpty && _takenJerseys.contains(val);
   }
 
+  /// Strips non-alphanumeric characters and clamps to 4 chars.
+  String? _sanitizeJersey(String raw) {
+    final clean = raw.trim().replaceAll(RegExp(r'[^A-Za-z0-9]'), '');
+    if (clean.isEmpty) return null;
+    return clean.substring(0, clean.length.clamp(0, 4));
+  }
+
   void _onJerseyChanged(String _) {
     final warn = _isJerseyTaken();
     if (warn != _jerseyWarning) setState(() => _jerseyWarning = warn);
@@ -268,16 +267,10 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
         firstName:    firstName,
         lastName:     lastName,
         athleteEmail: athleteEmail,
-        athleteId:    _athleteIdController.text.trim().isEmpty
-                        ? null
-                        : _athleteIdController.text.trim(),
         guardianEmail: _guardianController.text.trim().isEmpty
                         ? null
                         : _guardianController.text.trim(),
-        grade:        _selectedGrade,
-        jerseyNumber: _jerseyController.text.trim().isEmpty
-                        ? null
-                        : _jerseyController.text.trim(),
+        jerseyNumber: _sanitizeJersey(_jerseyController.text),
         position:     _positionController.text.trim().isEmpty
                         ? null
                         : _positionController.text.trim(),
@@ -579,11 +572,15 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
               textCapitalization: TextCapitalization.characters,
               textInputAction: TextInputAction.next,
               onChanged: _onJerseyChanged,
-              // Limit jersey to 10 characters to prevent layout overflow.
-              inputFormatters: [LengthLimitingTextInputFormatter(10)],
+              // Allow only alphanumeric characters (prevents XSS / junk strings).
+              // Limit to 4 chars: covers 0–999 plus one optional letter suffix (e.g., 12A).
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]')),
+                LengthLimitingTextInputFormatter(4),
+              ],
               decoration: const InputDecoration(
                 labelText: 'Jersey Number',
-                hintText: 'e.g., 23, 00, 12A',
+                hintText: 'e.g., 23, 00, 12A (max 4)',
                 prefixIcon: Icon(Icons.numbers),
                 border: OutlineInputBorder(),
                 helperText: 'Can include letters (e.g., 12A)',
@@ -679,47 +676,6 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
               ),
               const SizedBox(height: 16),
             ],
-
-            // ── Athlete ID ─────────────────────────────────────────────────
-            TextFormField(
-              controller: _athleteIdController,
-              textCapitalization: TextCapitalization.characters,
-              textInputAction: TextInputAction.next,
-              inputFormatters: [LengthLimitingTextInputFormatter(30)],
-              decoration: const InputDecoration(
-                labelText: 'Athlete ID',
-                hintText: 'e.g., A12345',
-                prefixIcon: Icon(Icons.badge_outlined),
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // ── Grade ──────────────────────────────────────────────────────
-            DropdownButtonFormField<int?>(
-              initialValue: _selectedGrade,
-              decoration: const InputDecoration(
-                labelText: 'Grade',
-                prefixIcon: Icon(Icons.school_outlined),
-                border: OutlineInputBorder(),
-                helperText:
-                    'Grade automatically increases on July 1 each year',
-              ),
-              items: const [
-                DropdownMenuItem<int?>(
-                    value: null, child: Text('Not set')),
-                DropdownMenuItem<int?>(
-                    value: 9, child: Text('9th — Freshman')),
-                DropdownMenuItem<int?>(
-                    value: 10, child: Text('10th — Sophomore')),
-                DropdownMenuItem<int?>(
-                    value: 11, child: Text('11th — Junior')),
-                DropdownMenuItem<int?>(
-                    value: 12, child: Text('12th — Senior')),
-              ],
-              onChanged: (v) => setState(() => _selectedGrade = v),
-            ),
-            const SizedBox(height: 16),
 
             // ── Parent/Guardian Email ──────────────────────────────────────
             TextFormField(

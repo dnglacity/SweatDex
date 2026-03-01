@@ -34,7 +34,7 @@ import '../widgets/error_dialog.dart';
 //     returns 'email_send_rate_limit_exceeded' in some SDK versions.
 //
 // All v1.7 behaviours retained:
-//   – First/Last name, Confirm Password, Athlete ID fields
+//   – First/Last name, Confirm Password fields
 //   – BUG FIX (Bug 6): _toggleMode() clears ALL controllers
 // =============================================================================
 
@@ -56,12 +56,12 @@ class _LoginScreenState extends State<LoginScreen> {
   final _firstNameController        = TextEditingController();
   final _lastNameController         = TextEditingController();
   final _organizationController     = TextEditingController();
-  final _athleteIdController        = TextEditingController();
 
   bool _isLoading       = false;
   bool _isSignUp        = false;
   bool _obscurePassword = true;
   bool _obscureConfirm  = true;
+  bool _ageConfirmed    = false;
 
   @override
   void dispose() {
@@ -71,7 +71,6 @@ class _LoginScreenState extends State<LoginScreen> {
     _firstNameController.dispose();
     _lastNameController.dispose();
     _organizationController.dispose();
-    _athleteIdController.dispose();
     super.dispose();
   }
 
@@ -86,6 +85,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _handleSubmit() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_isSignUp && !_ageConfirmed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('You must confirm you are 13 or older to create an account.'),
+        ),
+      );
+      return;
+    }
     setState(() => _isLoading = true);
 
     try {
@@ -98,9 +105,6 @@ class _LoginScreenState extends State<LoginScreen> {
           organization: _organizationController.text.trim().isEmpty
                           ? null
                           : _organizationController.text.trim(),
-          athleteId:    _athleteIdController.text.trim().isEmpty
-                          ? null
-                          : _athleteIdController.text.trim(),
         );
 
         if (mounted) {
@@ -236,7 +240,7 @@ class _LoginScreenState extends State<LoginScreen> {
       _firstNameController.clear();
       _lastNameController.clear();
       _organizationController.clear();
-      _athleteIdController.clear();
+      _ageConfirmed = false;
     });
   }
 
@@ -354,21 +358,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           const SizedBox(height: 16),
 
-                          // Athlete ID (optional)
-                          TextFormField(
-                            controller: _athleteIdController,
-                            textInputAction: TextInputAction.next,
-                            textCapitalization: TextCapitalization.characters,
-                            decoration: const InputDecoration(
-                              labelText: 'Athlete ID (optional)',
-                              hintText: 'e.g., A12345',
-                              prefixIcon: Icon(Icons.badge_outlined),
-                              border: OutlineInputBorder(),
-                              helperText:
-                                  'Your school or club athlete ID, if you have one',
-                            ),
-                          ),
-                          const SizedBox(height: 16),
+
                         ],
 
                         // ── Email ────────────────────────────────────────────
@@ -459,6 +449,27 @@ class _LoginScreenState extends State<LoginScreen> {
                               }
                               return null;
                             },
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+
+                        // ── COPPA age gate (sign-up only) ────────────────────
+                        if (_isSignUp) ...[
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Checkbox(
+                                value: _ageConfirmed,
+                                onChanged: (v) =>
+                                    setState(() => _ageConfirmed = v ?? false),
+                              ),
+                              const Expanded(
+                                child: Text(
+                                  'I confirm I am 13 or older',
+                                  style: TextStyle(fontSize: 14),
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 8),
                         ],

@@ -15,8 +15,8 @@ CREATE INDEX IF NOT EXISTS idx_players_guardian_email ON public.players (lower(g
 Optimizations
 A. Replace FutureBuilder with StreamBuilder on TeamSelectionScreen
 _teamsFuture is a Future refreshed manually by calling _refreshTeams(). The team list should behave like the game roster list — driven by a Supabase Realtime stream so changes made by other coaches (team renames, new members added) appear without a manual pull-to-refresh. [Inference] This would require adding a getTeamStream() method to PlayerService mirroring the existing getGameRosterStream() pattern.
-B. Move the is_team_member / is_team_owner check inside the DB for deleteTeam and removeMemberFromTeam
-Currently player_service.dart calls _isTeamOwner() (a round-trip) before calling the actual delete — two round-trips total. The ownership check should be enforced entirely by RLS so the Dart layer only needs to make one call and handle a permission error.
+B. [DONE v1.12] Move the is_team_member / is_team_owner check inside the DB for removeMemberFromTeam — implemented via remove_member_from_team SECURITY DEFINER RPC with atomic owner guard.
+deleteTeam ownership check still uses a client-side round-trip.
 C. Add get_my_team_ids() as an index-backed materialized or cached query
 [Inference] On rosters with 50+ teams, every SELECT on players or team_members invokes get_my_team_ids() per row evaluated by Postgres. A partial index CREATE INDEX idx_team_members_user_id ON team_members(user_id) (if not already present) would ensure this subquery is an index-only scan.
 

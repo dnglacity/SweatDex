@@ -7,8 +7,6 @@
 //   • Added `nickname` — the user's own default display nickname.
 //     Coaches may override this locally on their roster; this is the account-
 //     level default.
-//   • Added `athleteId` — optional athlete/student ID entered at sign-up or
-//     editable in Account Settings.
 //
 // TeamMember changes:
 //   • `roleLabel` updated with new roles: 'team_parent', 'team_manager'.
@@ -33,10 +31,6 @@ class AppUser {
   // CHANGE (v1.7): coaches can override this on their local roster view.
   final String? nickname;
 
-  /// Optional athlete / student ID.
-  // CHANGE (v1.7): entered at sign-up or editable in Account Settings.
-  final String? athleteId;
-
   /// Email address — copied from auth.users at trigger time.
   final String email;
 
@@ -51,7 +45,6 @@ class AppUser {
     required this.firstName,
     required this.lastName,
     this.nickname,
-    this.athleteId,
     required this.email,
     this.organization,
     this.createdAt,
@@ -84,7 +77,6 @@ class AppUser {
       firstName:    first,
       lastName:     last,
       nickname:     map['nickname']     as String?,
-      athleteId:    map['athlete_id']   as String?,
       email:        map['email']        as String? ?? '',
       organization: map['organization'] as String?,
       createdAt:    map['created_at'] != null
@@ -101,7 +93,6 @@ class AppUser {
       'last_name':    lastName,
       'email':        email,
       if (nickname     != null) 'nickname':     nickname,
-      if (athleteId    != null) 'athlete_id':   athleteId,
       if (organization != null) 'organization': organization,
     };
   }
@@ -113,7 +104,6 @@ class AppUser {
     String? firstName,
     String? lastName,
     String? nickname,
-    String? athleteId,
     String? email,
     String? organization,
     DateTime? createdAt,
@@ -124,7 +114,6 @@ class AppUser {
       firstName:    firstName    ?? this.firstName,
       lastName:     lastName     ?? this.lastName,
       nickname:     nickname     ?? this.nickname,
-      athleteId:    athleteId    ?? this.athleteId,
       email:        email        ?? this.email,
       organization: organization ?? this.organization,
       createdAt:    createdAt    ?? this.createdAt,
