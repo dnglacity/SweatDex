@@ -941,8 +941,8 @@ class PlayerService {
           .rpc('redeem_team_invite', params: {'p_code': code.trim().toUpperCase()});
       final row = (result as List).first as Map<String, dynamic>;
       return {
-        'team_id':   row['team_id'] as String,
-        'team_name': row['team_name'] as String,
+        'team_id':   (row['out_team_id'] ?? row['team_id']) as String,
+        'team_name': (row['out_team_name'] ?? row['team_name']) as String,
       };
     } catch (e) {
       final msg = e.toString();

@@ -1,3 +1,7 @@
+v1.12 02.28.2026 2150 Team invite system bug fix
+- Fixed: redeem_team_invite RPC threw "column reference team_id is ambiguous" error; resolved by renaming RETURNS TABLE OUT parameters to out_team_id/out_team_name/out_role and correcting t.name to t.team_name
+- Fixed: redeemTeamInvite() in player_service.dart updated to read out_team_id and out_team_name keys returned by the revised RPC
+
 v1.12 02.28.2026 Team invite system
 - Added: Team invite code feature — coaches and owners can generate a 6-character alphanumeric code from the Roster screen overflow menu ("Invite to Team")
 - Added: Invite dialog displays the code in a styled box with expiry countdown, a Copy Code button, and an End Invite button to revoke early
