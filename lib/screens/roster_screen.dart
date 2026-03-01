@@ -976,6 +976,29 @@ class _RosterScreenState extends State<RosterScreen> {
                                                   player, ns);
                                             },
                                           ),
+                                        if (_isCoachOrOwner)
+                                          IconButton(
+                                            icon: const Icon(
+                                                Icons.edit_outlined),
+                                            tooltip: 'Edit player',
+                                            onPressed: () async {
+                                              final result =
+                                                  await Navigator.push<bool>(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder: (_) =>
+                                                      AddPlayerScreen(
+                                                    teamId: widget.teamId,
+                                                    playerToEdit: player,
+                                                  ),
+                                                ),
+                                              );
+                                              if (result == true &&
+                                                  mounted) {
+                                                _loadFirstPage();
+                                              }
+                                            },
+                                          ),
                                         PopupMenuButton<String>(
                                           icon: const Icon(Icons.more_vert),
                                           onSelected: (v) async {

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/player_service.dart';
 import '../widgets/error_dialog.dart';
+import '../widgets/date_input_field.dart';
 import 'game_roster_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -112,12 +113,12 @@ class _SavedRosterScreenState extends State<SavedRosterScreen> {
     // invocation gets fresh instances.
     final titleController =
         TextEditingController(text: '${widget.teamName} vs. ');
-    final dateController = TextEditingController();
     final starterController = TextEditingController(text: '5');
     final formKey = GlobalKey<FormState>();
 
     bool submitted = false;
     int starterSlots = 5;
+    String? dialogDate;
 
     final result = await showDialog<_SavedRoster>(
       context: context,
@@ -159,16 +160,13 @@ class _SavedRosterScreenState extends State<SavedRosterScreen> {
                     const SizedBox(height: 16),
 
                     // ── Date (optional) ───────────────────────────────────────
-                    TextFormField(
-                      controller: dateController,
-                      textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(
-                        labelText: 'Game Date (optional)',
-                        hintText: 'e.g. 2026-03-15',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.calendar_today),
-                      ),
-                      keyboardType: TextInputType.datetime,
+                    Text(
+                      'Game Date (optional)',
+                      style: Theme.of(ctx).textTheme.labelLarge,
+                    ),
+                    const SizedBox(height: 8),
+                    DateInputField(
+                      onChanged: (v) => setLocal(() => dialogDate = v),
                     ),
                     const SizedBox(height: 16),
 
@@ -247,9 +245,7 @@ class _SavedRosterScreenState extends State<SavedRosterScreen> {
                       _SavedRoster(
                         id: null, // DB will assign the UUID
                         title: titleController.text.trim(),
-                        gameDate: dateController.text.trim().isEmpty
-                            ? null
-                            : dateController.text.trim(),
+                        gameDate: dialogDate,
                         starterSlots: parsed.clamp(1, 50),
                         createdAt: DateTime.now(),
                       ),
@@ -271,7 +267,6 @@ class _SavedRosterScreenState extends State<SavedRosterScreen> {
     // animation frame.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       titleController.dispose();
-      dateController.dispose();
       starterController.dispose();
     });
 
@@ -337,6 +332,87 @@ class _SavedRosterScreenState extends State<SavedRosterScreen> {
       ),
     );
     // Realtime stream handles any changes made while inside the roster.
+  }
+
+  // ── Duplicate roster ──────────────────────────────────────────────────────
+
+  Future<void> _showDuplicateDialog(_SavedRoster source) async {
+    final titleController =
+        TextEditingController(text: '${source.title} (Copy)');
+    final formKey = GlobalKey<FormState>();
+    bool submitted = false;
+
+    final newTitle = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Duplicate Roster'),
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            controller: titleController,
+            autofocus: true,
+            textInputAction: TextInputAction.done,
+            decoration: const InputDecoration(
+              labelText: 'New Roster Name *',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.assignment),
+            ),
+            onFieldSubmitted: (_) {
+              if (!submitted && formKey.currentState!.validate()) {
+                submitted = true;
+                Navigator.pop(ctx, titleController.text.trim());
+              }
+            },
+            validator: (v) {
+              if (v == null || v.trim().isEmpty) return 'Please enter a name';
+              final trimmed = v.trim();
+              final duplicate = _rosters.any(
+                (r) => r.title.toLowerCase() == trimmed.toLowerCase(),
+              );
+              if (duplicate) return 'A roster with this name already exists';
+              return null;
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (!submitted && formKey.currentState!.validate()) {
+                submitted = true;
+                Navigator.pop(ctx, titleController.text.trim());
+              }
+            },
+            child: const Text('Duplicate'),
+          ),
+        ],
+      ),
+    );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      titleController.dispose();
+    });
+
+    if (newTitle != null && mounted) {
+      try {
+        await _playerService.duplicateGameRoster(
+          sourceRosterId: source.id!,
+          teamId: widget.teamId,
+          newTitle: newTitle,
+        );
+        // Realtime stream will add the new row automatically.
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('"$newTitle" created')),
+          );
+        }
+      } catch (e) {
+        if (mounted) showErrorDialog(context, e);
+      }
+    }
   }
 
   // ── Delete roster ─────────────────────────────────────────────────────────
@@ -442,6 +518,8 @@ class _SavedRosterScreenState extends State<SavedRosterScreen> {
                           onSelected: (v) async {
                             if (v == 'open') {
                               await _openRoster(r);
+                            } else if (v == 'duplicate') {
+                              await _showDuplicateDialog(r);
                             } else if (v == 'delete') {
                               await _confirmDelete(r);
                             }
@@ -455,6 +533,15 @@ class _SavedRosterScreenState extends State<SavedRosterScreen> {
                                 Text('Open'),
                               ]),
                             ),
+                            PopupMenuItem(
+                              value: 'duplicate',
+                              child: Row(children: [
+                                Icon(Icons.copy, size: 20),
+                                SizedBox(width: 12),
+                                Text('Duplicate'),
+                              ]),
+                            ),
+                            PopupMenuDivider(),
                             PopupMenuItem(
                               value: 'delete',
                               child: Row(children: [

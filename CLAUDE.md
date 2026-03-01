@@ -9,6 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Targets:** Android, iOS, Web (deployed to GitHub Pages)
 - **Backend:** Supabase (Auth + PostgREST + Realtime + SECURITY DEFINER RPCs)
 - **Dart SDK:** `^3.11.0` (Dart 3.x patterns and null-safety required)
+- **Current Version** v1.12 
 
 ## Build & Run Commands
 
@@ -112,5 +113,5 @@ All imports within `lib/` use **relative paths** (`../models/player.dart`), not 
 ### Instructions
 
 - Provide script by replacing supabase_script.md if Supabase requires modification.
-- Commit with the following format example using date and time: "01.01.2026 1524".
-- Add comments to changelog.txt with the commit message as the section header. Describe what was added, removed, changed, or fixed.
+- Commit with the following format example using version, date and time: "[version] 01.01.2026 1524".
+- Add comments to changelog.txt using the commit message as the section header (format: `[version] MM.DD.YYYY HHMM description`). Describe what was added, removed, changed, or fixed.

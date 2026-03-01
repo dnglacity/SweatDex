@@ -15,6 +15,8 @@ import 'screens/auth_wrapper.dart';
 //   Material 3 tonal surfaces stay on-brand.
 // ─────────────────────────────────────────────────────────────────────────────
 
+const kAppVersion = '1.12';
+
 void main() async {
   // Ensure Flutter bindings are ready before any async work.
   WidgetsFlutterBinding.ensureInitialized();

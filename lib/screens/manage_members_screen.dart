@@ -5,7 +5,7 @@ import '../widgets/error_dialog.dart';
 import 'account_settings_screen.dart';
 
 // =============================================================================
-// manage_members_screen.dart  (AOD v1.8)
+// manage_members_screen.dart  (AOD v1.9)
 //
 // BUG FIX (Issue 1 / 1.2 / 1.3 — TextEditingController used after dispose):
 //   _showAddMemberDialog() created emailController locally, then called
@@ -31,7 +31,14 @@ import 'account_settings_screen.dart';
 //   This screen now opens AccountSettingsScreen which handles the full
 //   password-gated email change flow (see account_settings_screen.dart).
 //
-// All v1.7 behaviours retained.
+// PERF (v1.9 — abandoned-future fix):
+//   Replaced FutureBuilder + late Future<List<TeamMember>> _membersFuture with
+//   a state-driven pattern (_members list + _isLoading bool + _loadError).
+//   A generation counter (_loadGen) ensures that results from a superseded
+//   refresh call are silently discarded, preventing stale data from overwriting
+//   a newer result when the user rapidly triggers refreshes.
+//
+// All v1.8 behaviours retained.
 // =============================================================================
 
 class ManageMembersScreen extends StatefulWidget {
@@ -53,14 +60,22 @@ class ManageMembersScreen extends StatefulWidget {
 class _ManageMembersScreenState extends State<ManageMembersScreen> {
   final _playerService = PlayerService();
 
-  late Future<List<TeamMember>> _membersFuture;
+  // State-driven member list — replaces the old FutureBuilder + _membersFuture.
+  // _loadGen increments on every refresh so stale completions are discarded.
+  List<TeamMember> _members      = [];
+  bool             _isLoading    = true;
+  bool             _isSubmitting = false;
+  Object?          _loadError;
+  int              _loadGen      = 0;
+
   String? _currentUserId;
 
   @override
   void initState() {
     super.initState();
-    _loadCurrentUser();
-    _refreshMembers();
+    // Load the current user ID first, then fetch members so that the YOU
+    // badge and isSelf leave-team logic are correct on first render.
+    _loadCurrentUser().then((_) => _refreshMembers());
   }
 
   // ── Data loading ──────────────────────────────────────────────────────────
@@ -74,10 +89,23 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
     }
   }
 
-  void _refreshMembers() {
-    setState(() {
-      _membersFuture = _playerService.getTeamMembers(widget.teamId);
-    });
+  Future<void> _refreshMembers() async {
+    // Stamp the generation before the async gap so any concurrent call that
+    // starts later will have a higher gen and win; this call's result will be
+    // discarded if a newer one completes first.
+    final gen = ++_loadGen;
+    if (mounted) setState(() { _isLoading = true; _loadError = null; });
+
+    try {
+      final result = await _playerService.getTeamMembers(widget.teamId);
+      if (mounted && gen == _loadGen) {
+        setState(() { _members = result; _isLoading = false; });
+      }
+    } catch (e) {
+      if (mounted && gen == _loadGen) {
+        setState(() { _loadError = e; _isLoading = false; });
+      }
+    }
   }
 
   // ── Role helpers ──────────────────────────────────────────────────────────
@@ -130,7 +158,9 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
                     if (v == null || v.trim().isEmpty) {
                       return 'Please enter an email';
                     }
-                    if (!v.contains('@')) return 'Enter a valid email';
+                    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(v.trim())) {
+                      return 'Enter a valid email';
+                    }
                     return null;
                   },
                 ),
@@ -187,6 +217,7 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => emailController.dispose());
 
     if (result == true && mounted) {
+      setState(() => _isSubmitting = true);
       try {
         // Calls the add_member_to_team SECURITY DEFINER RPC which resolves
         // the user by email inside the DB, bypassing RLS on public.users.
@@ -207,6 +238,8 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
         if (mounted) {
           showErrorDialog(context, e);
         }
+      } finally {
+        if (mounted) setState(() => _isSubmitting = false);
       }
     }
   }
@@ -214,6 +247,10 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
   // ── Link player dialog ────────────────────────────────────────────────────
 
   Future<void> _showLinkPlayerDialog() async {
+    // Show the loading overlay while the player list is fetched so the user
+    // gets immediate feedback after dismissing the FAB menu.
+    if (mounted) setState(() => _isSubmitting = true);
+
     List<Map<String, dynamic>> players = [];
     try {
       final raw = await _playerService.getPlayers(widget.teamId);
@@ -222,11 +259,14 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
           .toList();
     } catch (e) {
       if (mounted) {
+        setState(() => _isSubmitting = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error loading players: $e')),
         );
       }
       return;
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
     }
 
     if (players.isEmpty) {
@@ -298,7 +338,9 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
                       if (v == null || v.trim().isEmpty) {
                         return 'Please enter an email';
                       }
-                      if (!v.contains('@')) return 'Enter a valid email';
+                      if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(v.trim())) {
+                      return 'Enter a valid email';
+                    }
                       return null;
                     },
                   ),
@@ -329,6 +371,7 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => emailController.dispose());
 
     if (result == true && selectedPlayerId != null && mounted) {
+      setState(() => _isSubmitting = true);
       try {
         await _playerService.linkPlayerToAccount(
           teamId:      widget.teamId,
@@ -347,6 +390,8 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
         if (mounted) {
           showErrorDialog(context, e);
         }
+      } finally {
+        if (mounted) setState(() => _isSubmitting = false);
       }
     }
   }
@@ -380,6 +425,7 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
     );
 
     if (confirm == true && mounted) {
+      setState(() => _isSubmitting = true);
       try {
         await _playerService.removeMemberFromTeam(
             widget.teamId, member.userId);
@@ -400,6 +446,8 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
         if (mounted) {
           showErrorDialog(context, e);
         }
+      } finally {
+        if (mounted) setState(() => _isSubmitting = false);
       }
     }
   }
@@ -415,24 +463,22 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => AlertDialog(
           title: Text('Change Role — ${member.name}'),
-          content: RadioGroup<String>(
-            groupValue: selected,
-            onChanged: (v) => setLocal(() => selected = v!),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: roles.map((r) {
-                final label = {
-                  'coach':        'Coach',
-                  'player':       'Player',
-                  'team_parent':  'Team Parent',
-                  'team_manager': 'Team Manager',
-                }[r]!;
-                return RadioListTile<String>(
-                  value: r,
-                  title: Text(label),
-                );
-              }).toList(),
-            ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: roles.map((r) {
+              final label = {
+                'coach':        'Coach',
+                'player':       'Player',
+                'team_parent':  'Team Parent',
+                'team_manager': 'Team Manager',
+              }[r]!;
+              return RadioListTile<String>(
+                value: r,
+                groupValue: selected,
+                title: Text(label),
+                onChanged: (v) => setLocal(() => selected = v!),
+              );
+            }).toList(),
           ),
           actions: [
             TextButton(
@@ -449,6 +495,7 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
     );
 
     if (confirm == true && selected != member.role && mounted) {
+      setState(() => _isSubmitting = true);
       try {
         await _playerService.updateMemberRole(
           teamId:  widget.teamId,
@@ -457,16 +504,24 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
         );
         _refreshMembers();
         if (mounted) {
+          const roleLabels = {
+            'coach':        'Coach',
+            'player':       'Player',
+            'team_parent':  'Team Parent',
+            'team_manager': 'Team Manager',
+          };
+          final label = roleLabels[selected] ?? selected;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-                content: Text(
-                    "${member.name}'s role updated to $selected")),
+                content: Text("${member.name}'s role updated to $label")),
           );
         }
       } catch (e) {
         if (mounted) {
           showErrorDialog(context, e);
         }
+      } finally {
+        if (mounted) setState(() => _isSubmitting = false);
       }
     }
   }
@@ -489,19 +544,22 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Transfer Ownership'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: eligible.map((m) {
-            return ListTile(
-              leading: CircleAvatar(
-                child: Text(
-                    m.firstName.isNotEmpty ? m.firstName[0].toUpperCase() : '?'),
-              ),
-              title: Text(m.name),
-              subtitle: Text(m.roleLabel),
-              onTap: () => Navigator.pop(ctx, m),
-            );
-          }).toList(),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView(
+            shrinkWrap: true,
+            children: eligible.map((m) {
+              return ListTile(
+                leading: CircleAvatar(
+                  child: Text(
+                      m.firstName.isNotEmpty ? m.firstName[0].toUpperCase() : '?'),
+                ),
+                title: Text(m.name),
+                subtitle: Text(m.roleLabel),
+                onTap: () => Navigator.pop(ctx, m),
+              );
+            }).toList(),
+          ),
         ),
         actions: [
           TextButton(
@@ -535,6 +593,7 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
       );
 
       if (confirm == true && mounted) {
+        setState(() => _isSubmitting = true);
         try {
           await _playerService.transferOwnership(
               widget.teamId, selected.userId);
@@ -555,6 +614,8 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
               ),
             );
           }
+        } finally {
+          if (mounted) setState(() => _isSubmitting = false);
         }
       }
     }
@@ -569,79 +630,17 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
         title: Text('${widget.teamName} Members'),
         centerTitle: true,
       ),
-      body: FutureBuilder<List<TeamMember>>(
-        future: _membersFuture,
-        builder: (ctx, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (snapshot.hasError) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.error_outline,
-                      size: 48, color: Colors.red),
-                  const SizedBox(height: 16),
-                  Text('Error: ${snapshot.error}'),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: _refreshMembers,
-                    child: const Text('Retry'),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          final members = snapshot.data ?? [];
-          final currentMember = members.firstWhere(
-            (m) => m.userId == _currentUserId,
-            orElse: () => TeamMember(
-              teamMemberId: '',
-              teamId:       widget.teamId,
-              userId:       '',
-              role:         widget.currentUserRole,
-              firstName:    '',
-              lastName:     '',
-              email:        '',
+      body: Stack(
+        children: [
+          _buildBody(),
+          if (_isSubmitting)
+            const Opacity(
+              opacity: 0.6,
+              child: ModalBarrier(dismissible: false, color: Colors.black),
             ),
-          );
-
-          return Column(
-            children: [
-              _RoleBanner(
-                role: currentMember.role.isNotEmpty
-                    ? currentMember.role
-                    : widget.currentUserRole,
-                onTransferOwnership: _isOwner
-                    ? () => _showTransferOwnershipDialog(members)
-                    : null,
-              ),
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: members.length,
-                  itemBuilder: (_, i) {
-                    final m             = members[i];
-                    final isCurrentUser = m.userId == _currentUserId;
-                    return _MemberTile(
-                      member:              m,
-                      isCurrentUser:       isCurrentUser,
-                      isCurrentUserOwner:  _isOwner,
-                      isCurrentUserCoach:  _isCoachOrOwner,
-                      onRemove:            () => _confirmRemoveMember(m),
-                      onChangeRole: _isOwner && !m.isOwner
-                          ? () => _showChangeRoleDialog(m)
-                          : null,
-                    );
-                  },
-                ),
-              ),
-            ],
-          );
-        },
+          if (_isSubmitting)
+            const Center(child: CircularProgressIndicator()),
+        ],
       ),
       floatingActionButton: _isCoachOrOwner
           ? FloatingActionButton.extended(
@@ -650,6 +649,76 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
               label: const Text('Actions'),
             )
           : null,
+    );
+  }
+
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_loadError != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 48, color: Colors.red),
+            const SizedBox(height: 16),
+            const Text('Could not load team members.'),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _refreshMembers,
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final currentMember = _members.firstWhere(
+      (m) => m.userId == _currentUserId,
+      orElse: () => TeamMember(
+        teamMemberId: '',
+        teamId:       widget.teamId,
+        userId:       '',
+        role:         widget.currentUserRole,
+        firstName:    '',
+        lastName:     '',
+        email:        '',
+      ),
+    );
+
+    return Column(
+      children: [
+        _RoleBanner(
+          role: currentMember.role.isNotEmpty
+              ? currentMember.role
+              : widget.currentUserRole,
+          onTransferOwnership: _isOwner
+              ? () => _showTransferOwnershipDialog(_members)
+              : null,
+        ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: _members.length,
+            itemBuilder: (_, i) {
+              final m             = _members[i];
+              final isCurrentUser = m.userId == _currentUserId;
+              return _MemberTile(
+                member:              m,
+                isCurrentUser:       isCurrentUser,
+                isCurrentUserOwner:  _isOwner,
+                isCurrentUserCoach:  _isCoachOrOwner,
+                onRemove:            () => _confirmRemoveMember(m),
+                onChangeRole: _isOwner && !m.isOwner
+                    ? () => _showChangeRoleDialog(m)
+                    : null,
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 

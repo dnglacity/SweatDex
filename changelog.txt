@@ -1,0 +1,37 @@
+v1.12 02.28.2026 Quality of life improvements
+- Added: Pencil (edit) icon on each roster player row between the attendance icon and the menu icon — opens AddPlayerScreen in edit mode directly without going through the popup menu
+- Added: Duplicate option in the game roster inline menu (saved_roster_screen) — prompts for a new name pre-filled as "<original> (Copy)", validates uniqueness (case-insensitive) against existing rosters, copies starters/substitutes/starter_slots to a new row
+- Added: PlayerService.duplicateGameRoster() — fetches source roster and inserts a new row with copied lineup data
+- Changed: Set starter slots icon in game_roster_screen AppBar changed from tune to settings (gear)
+- Changed: Gear icon now opens a popup menu with "Starter Slots" and "Change Date" options instead of directly opening the slot dialog
+- Added: Change Date option in game roster settings menu — opens a dialog to set or clear the game date, persisted to the DB immediately via PlayerService.updateGameRosterMeta()
+- Added: PlayerService.updateGameRosterMeta() — updates game_date on an existing roster row
+- Added: lib/widgets/date_input_field.dart — reusable DateInputField widget with separate YYYY / MM / DD text boxes, auto-focus advancement, and a calendar icon that opens showDatePicker
+- Changed: Game date input in New Game Roster dialog (saved_roster_screen) replaced with DateInputField
+- Changed: Game date input in Change Date dialog (game_roster_screen) replaced with DateInputField with a dedicated Clear button
+
+v1.12 02.28.2026 2044 Account settings improvements
+- Added: "Sign Out" button in Account Settings screen
+- Added: App version footer ("Apex On Deck v2.28.26") at the bottom of Account Settings
+- Added: "Change Password" button in Account Settings screen
+- Added: Password change dialog prompts for current password (verified via re-auth), new password, and confirmation — blocks update if new passwords do not match
+- Added: AuthService.changePassword() re-authenticates then calls Supabase Auth updateUser() to set the new password
+- Added: kAppVersion constant in main.dart
+
+v1.12 02.28.2026 Game roster size saving and validation
+- Fixed: Changing the roster size (starter slots) is now persisted when saving a game roster — `updateGameRosterLineup` includes `starter_slots` in the DB update
+- Fixed: Loading a saved game roster now restores the saved starter slot count so the UI reflects the correct roster size
+- Added: Saving a game roster is blocked if the number of starters exceeds the roster size — a dialog prompts the coach to bench/remove a starter or increase the roster size
+
+v1.12 02.28.2026 Performance fixes
+- Fixed: Stale in-memory team cache in PlayerService — added 5-minute TTL (_teamsCacheValid) to prevent stale data on long sessions or shared devices
+- Fixed: Abandoned in-flight futures in ManageMembersScreen — replaced FutureBuilder + reassigned Future with state-driven pattern (_members, _isLoading, _loadError) and a generation counter to discard superseded results
+- Fixed: Hardcoded 800ms retry delay for user ID resolution — replaced direct table query + fixed retry with SECURITY DEFINER RPC (get_current_user_id), eliminating the trigger-race concern entirely and removing the retry loop
+- Fixed: Legacy name-split fallback in Player.fromMap() removed — migration is complete, _kPlayerColumns never selects the legacy name column so the code was unreachable dead code
+- Fixed: Missing bounds validation in getPlayersPaginated() — added assert guards for from >= 0 and to >= from
+- Fixed: Triple-allocation list chain in _mapPlayers() — replaced .cast().map().toList() with single-pass .map().toList() to eliminate intermediate CastList allocation
+
+v1.12 02.28.2026 1840
+- Added: Athlete Email field in edit mode on AddPlayerScreen (re-attempts account linking on save)
+- Changed: CLAUDE.md build commands split into distinct Publish, Reset, and Debug workflows
+- Changed: Commands.txt updated to clarify ship vs reset workflows

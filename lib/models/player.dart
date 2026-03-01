@@ -1,16 +1,18 @@
 import 'package:flutter/material.dart';
 
 // =============================================================================
-// player.dart  (AOD v1.8)
+// player.dart  (AOD v1.9)
 //
 // CHANGE (v1.8):
 //   • Split `name` into `firstName` + `lastName` (DB columns: first_name,
 //     last_name). The `name` getter concatenates them for display compatibility
 //     so all existing callers (screens, game roster JSONB) continue to work.
-//   • `fromMap` falls back to splitting the legacy `name` column when
-//     first_name/last_name are absent (safe during migration window).
-//   • `toMap` writes first_name + last_name; no longer writes `name`
-//     (DB keeps a generated/trigger-maintained `name` column if needed).
+//   • `toMap` writes first_name + last_name; no longer writes `name`.
+//
+// CHANGE (v1.9):
+//   • Removed legacy `name`-column fallback from `fromMap`. Migration is
+//     complete — _kPlayerColumns never selects `name`, so the split path
+//     was unreachable dead code.
 //
 // All v1.7 fields retained.
 // =============================================================================
@@ -74,23 +76,8 @@ class Player {
     final athleteEmail = map['athlete_email'] as String?
                       ?? map['student_email'] as String?;
 
-    // CHANGE (v1.8): read first_name/last_name; fall back to splitting
-    // the legacy name column during the migration window.
-    final rawFirst = map['first_name'] as String?;
-    final rawLast  = map['last_name']  as String?;
-    String first   = rawFirst ?? '';
-    String last    = rawLast  ?? '';
-
-    if (first.isEmpty && last.isEmpty) {
-      final legacy   = map['name'] as String? ?? '';
-      final spaceIdx = legacy.indexOf(' ');
-      if (spaceIdx > 0) {
-        first = legacy.substring(0, spaceIdx);
-        last  = legacy.substring(spaceIdx + 1);
-      } else {
-        first = legacy;
-      }
-    }
+    final String first = map['first_name'] as String? ?? '';
+    final String last  = map['last_name']  as String? ?? '';
 
     return Player(
       id:             map['id']      as String? ?? '',

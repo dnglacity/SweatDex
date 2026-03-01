@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import '../models/player.dart';
 import '../services/player_service.dart';
 import '../widgets/error_dialog.dart';
+import '../widgets/date_input_field.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // game_roster_screen.dart  (AOD v1.4)
@@ -76,10 +77,14 @@ class _GameRosterScreenState extends State<GameRosterScreen>
   // These are temporary session overrides; they do NOT alter the player DB row.
   final Map<String, String> _positionOverrides = {};
 
+  // Mutable game date — updated via the settings menu.
+  late String? _gameDate;
+
   @override
   void initState() {
     super.initState();
     _starterSlots = widget.starterSlots;
+    _gameDate = widget.gameDate;
     _tabController = TabController(length: 2, vsync: this);
     _loadPlayers();
   }
@@ -118,6 +123,10 @@ class _GameRosterScreenState extends State<GameRosterScreen>
                 .where((id) => playerMap.containsKey(id))
                 .map((id) => playerMap[id]!)
                 .toList();
+            final savedSlots = rosterData['starter_slots'];
+            if (savedSlots is int && savedSlots > 0) {
+              _starterSlots = savedSlots;
+            }
             _loading = false;
           });
           return;
@@ -394,9 +403,93 @@ class _GameRosterScreenState extends State<GameRosterScreen>
         .addPostFrameCallback((_) => controller.dispose());
   }
 
+  // ── Date dialog ───────────────────────────────────────────────────────────
+
+  Future<void> _showDateDialog() async {
+    // Tracks the value emitted by DateInputField while the dialog is open.
+    // Seeded with the current date so "Save" with no changes is a no-op.
+    String? pendingDate = _gameDate;
+
+    final result = await showDialog<String?>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Change Game Date'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DateInputField(
+                initialValue: _gameDate,
+                onChanged: (v) => pendingDate = v,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Leave all fields blank to clear the date.',
+                style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, ''),
+              child: const Text('Clear'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, pendingDate ?? ''),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (result == null || !mounted) return;
+
+    final newDate = result.isEmpty ? null : result;
+    setState(() => _gameDate = newDate);
+
+    if (widget.rosterId != null) {
+      try {
+        await _playerService.updateGameRosterMeta(
+          rosterId: widget.rosterId!,
+          gameDate: newDate,
+        );
+      } catch (e) {
+        if (mounted) showErrorDialog(context, e);
+      }
+    }
+  }
+
   // ── Save roster ───────────────────────────────────────────────────────────
 
   Future<void> _saveRoster() async {
+    if (_starters.length > _starterSlots) {
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Too Many Starters'),
+          content: Text(
+            '${_starters.length} starters exceed the roster size of $_starterSlots. '
+            'Bench or remove a starter, or increase the roster size before saving.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     if (widget.rosterId != null) {
       try {
         // CHANGE (v1.4): Include position_override in each slot entry.
@@ -423,6 +516,7 @@ class _GameRosterScreenState extends State<GameRosterScreen>
           rosterId: widget.rosterId!,
           starters: starterData,
           substitutes: subData,
+          starterSlots: _starterSlots,
         );
 
         if (mounted) {
@@ -478,8 +572,8 @@ class _GameRosterScreenState extends State<GameRosterScreen>
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
-            if (widget.gameDate != null && widget.gameDate!.isNotEmpty)
-              Text(widget.gameDate!,
+            if (_gameDate != null && _gameDate!.isNotEmpty)
+              Text(_gameDate!,
                   style: const TextStyle(
                       fontSize: 11, fontWeight: FontWeight.normal))
             else
@@ -489,10 +583,34 @@ class _GameRosterScreenState extends State<GameRosterScreen>
           ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.tune),
-            tooltip: 'Set starter slots',
-            onPressed: _showSlotDialog,
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.settings),
+            tooltip: 'Roster settings',
+            onSelected: (v) async {
+              if (v == 'slots') {
+                await _showSlotDialog();
+              } else if (v == 'date') {
+                await _showDateDialog();
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: 'slots',
+                child: Row(children: [
+                  Icon(Icons.format_list_numbered, size: 20),
+                  SizedBox(width: 12),
+                  Text('Starter Slots'),
+                ]),
+              ),
+              PopupMenuItem(
+                value: 'date',
+                child: Row(children: [
+                  Icon(Icons.calendar_today, size: 20),
+                  SizedBox(width: 12),
+                  Text('Change Date'),
+                ]),
+              ),
+            ],
           ),
           IconButton(
             icon: const Icon(Icons.delete_sweep),

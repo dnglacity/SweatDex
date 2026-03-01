@@ -282,6 +282,41 @@ class AuthService {
     }
   }
 
+  // ── Change Password ───────────────────────────────────────────────────────
+
+  /// Changes the current user's password after verifying [currentPassword].
+  ///
+  /// FLOW:
+  ///   1. Re-authenticates with [currentPassword] to verify identity.
+  ///   2. Calls Supabase Auth updateUser() to set [newPassword].
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final authUser = currentUser;
+    if (authUser == null) throw Exception('Not logged in.');
+    if (authUser.email == null) throw Exception('Current email not found.');
+
+    // Step 1: verify current password by re-signing in.
+    try {
+      await _supabase.auth.signInWithPassword(
+        email: authUser.email!.toLowerCase().trim(),
+        password: currentPassword,
+      );
+    } catch (e) {
+      debugPrint('changePassword re-auth error: $e');
+      throw Exception('Current password is incorrect. Please try again.');
+    }
+
+    // Step 2: update the password in Supabase Auth.
+    try {
+      await _supabase.auth.updateUser(UserAttributes(password: newPassword));
+    } catch (e) {
+      debugPrint('changePassword updateUser error: $e');
+      throw Exception('Password update failed. Please try again.');
+    }
+  }
+
   // ── Password Reset ────────────────────────────────────────────────────────
 
   /// Sends a password reset email to [email].

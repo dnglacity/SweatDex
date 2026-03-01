@@ -1,252 +1,68 @@
-# AOD — Migration: players.name → first_name + last_name
+# Supabase Script
 
-**Run in:** Supabase Dashboard → SQL Editor (requires service-role access)
+## transfer_ownership RPC
 
-Run sections in order. Each is safe to re-run (`IF NOT EXISTS`, `IF EXISTS`).
+Atomically demotes the current owner to coach and promotes the new owner,
+preventing a window where a team has no owner if the second UPDATE would fail.
 
----
-
-## Section 1 — Add first_name and last_name columns
-
-```sql
-ALTER TABLE public.players
-  ADD COLUMN IF NOT EXISTS first_name TEXT NOT NULL DEFAULT '',
-  ADD COLUMN IF NOT EXISTS last_name  TEXT NOT NULL DEFAULT '';
-```
-
----
-
-## Section 2 — Migrate data from name → first_name / last_name
-
-Splits on the first space. Players with a single-word name get it as first_name.
+Run in the Supabase SQL editor:
 
 ```sql
-UPDATE public.players
-SET
-  first_name = TRIM(SPLIT_PART(name, ' ', 1)),
-  last_name  = TRIM(SUBSTRING(name FROM POSITION(' ' IN name) + 1))
-WHERE first_name = '' AND last_name = '';
-```
-
----
-
-## Section 3 — Keep name in sync via a generated column (optional)
-
-If you want the DB to maintain `name` automatically for any legacy queries:
-
-```sql
--- Drop the old default first so we can alter the column type.
-ALTER TABLE public.players
-  ALTER COLUMN name DROP DEFAULT,
-  ALTER COLUMN name DROP NOT NULL;
-
--- Recreate as a stored generated column.
--- NOTE: Postgres does not support altering a plain column to a generated column
--- in-place; we must drop and re-add it.
-ALTER TABLE public.players DROP COLUMN IF EXISTS name;
-
-ALTER TABLE public.players
-  ADD COLUMN name TEXT GENERATED ALWAYS AS (
-    TRIM(first_name || ' ' || last_name)
-  ) STORED;
-```
-
-> **Skip Section 3** if you prefer to keep `name` as a plain column that
-> you no longer write to. The Flutter app no longer writes `name` as of v1.8.
-
----
-
-## Section 4 — Update link_player_to_user RPC (replaces previous version)
-
-Fixes the missing team_members row when linking a player to a user account.
-
-```sql
-CREATE OR REPLACE FUNCTION public.link_player_to_user(
-  p_team_id      UUID,
-  p_player_id    UUID,
-  p_player_email TEXT
+CREATE OR REPLACE FUNCTION public.transfer_ownership(
+  p_team_id           uuid,
+  p_new_owner_user_id uuid
 )
-RETURNS VOID
+RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_user_id UUID;
+  v_caller_id uuid;
 BEGIN
-  -- Resolve user by email
-  SELECT id INTO v_user_id
+  -- Resolve the calling user's public.users.id.
+  SELECT id INTO v_caller_id
   FROM public.users
-  WHERE email = p_player_email
-  LIMIT 1;
+  WHERE user_id = auth.uid();
 
-  IF v_user_id IS NULL THEN
-    RAISE EXCEPTION 'No user found with email %', p_player_email;
+  IF v_caller_id IS NULL THEN
+    RAISE EXCEPTION 'Not logged in.';
   END IF;
 
-  -- Verify the caller is an owner/coach/manager of this team
+  -- Verify the caller is the current owner.
   IF NOT EXISTS (
     SELECT 1 FROM public.team_members
     WHERE team_id = p_team_id
-      AND user_id = auth.uid()
-      AND role IN ('owner', 'coach', 'team_manager')
+      AND user_id = v_caller_id
+      AND role    = 'owner'
   ) THEN
-    RAISE EXCEPTION 'Caller is not authorized to link players on this team';
+    RAISE EXCEPTION 'Only the current owner can transfer ownership.';
   END IF;
 
-  -- Link the player record to the resolved user
-  UPDATE public.players
-  SET user_id = v_user_id
-  WHERE id = p_player_id
-    AND team_id = p_team_id;
-
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'Player % not found on team %', p_player_id, p_team_id;
-  END IF;
-
-  -- Upsert team_members so the linked user can access the team
-  INSERT INTO public.team_members (team_id, user_id, role, player_id)
-  VALUES (p_team_id, v_user_id, 'player', p_player_id)
-  ON CONFLICT (team_id, user_id)
-  DO UPDATE SET
-    role      = EXCLUDED.role,
-    player_id = EXCLUDED.player_id;
-END;
-$$;
-```
-
-If the `ON CONFLICT` clause fails, add the unique constraint first:
-
-```sql
-ALTER TABLE public.team_members
-  ADD CONSTRAINT team_members_team_user_unique UNIQUE (team_id, user_id);
-```
-
----
-
-## Section 5 — Manually add a user to team_members as a player
-
-```sql
-INSERT INTO public.team_members (team_id, user_id, role)
-VALUES (
-  'd4d4bc5e-5ae1-4af0-9b8b-fcc3eed6edb0',
-  '58842965-a235-4ea6-8ff7-a33e727630e6',
-  'player'
-)
-ON CONFLICT (team_id, user_id)
-DO UPDATE SET role = 'player';
-```
-
----
-
-## Section 6 — add_member_to_team RPC (create or replace)
-
-Adds an existing user to a team by email. Caller must be owner/coach/team_manager.
-
-```sql
-CREATE OR REPLACE FUNCTION public.add_member_to_team(
-  p_team_id UUID,
-  p_email   TEXT,
-  p_role    TEXT
-)
-RETURNS VOID
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  v_user_id UUID;
-BEGIN
-  -- Resolve user by email from public.users (populated by handle_new_user trigger)
-  SELECT id INTO v_user_id
-  FROM public.users
-  WHERE email = LOWER(TRIM(p_email))
-  LIMIT 1;
-
-  IF v_user_id IS NULL THEN
-    RAISE EXCEPTION 'No Apex On Deck account found for email: %', p_email;
-  END IF;
-
-  -- Verify the caller is an owner/coach/manager of this team
+  -- Verify the target is already a member of the team.
   IF NOT EXISTS (
     SELECT 1 FROM public.team_members
     WHERE team_id = p_team_id
-      AND user_id = auth.uid()
-      AND role IN ('owner', 'coach', 'team_manager')
+      AND user_id = p_new_owner_user_id
   ) THEN
-    RAISE EXCEPTION 'You are not authorized to add members to this team';
+    RAISE EXCEPTION 'Target user is not a member of this team.';
   END IF;
 
-  -- Validate role
-  IF p_role NOT IN ('coach', 'player', 'team_parent', 'team_manager') THEN
-    RAISE EXCEPTION 'Invalid role: %', p_role;
-  END IF;
+  -- Both UPDATEs execute inside the same implicit transaction.
+  -- If either fails the entire operation rolls back.
+  UPDATE public.team_members
+  SET role = 'coach'
+  WHERE team_id = p_team_id
+    AND user_id = v_caller_id;
 
-  -- Insert or update team membership
-  INSERT INTO public.team_members (team_id, user_id, role)
-  VALUES (p_team_id, v_user_id, p_role)
-  ON CONFLICT (team_id, user_id)
-  DO UPDATE SET role = EXCLUDED.role;
-END;
-$$;
-```
-
----
-
-## Section 7 — Auto-link players on new user sign-up
-
-When a coach adds a player with an email that has no account yet, the player record is saved with `user_id = NULL`. This trigger fires after a new row is inserted into `public.users` (via the `handle_new_user` trigger) and retroactively links any matching unlinked player records.
-
-```sql
-CREATE OR REPLACE FUNCTION public.fn_auto_link_players_on_signup()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-BEGIN
-  -- For every player record whose athlete_email matches the new user's email
-  -- and that isn't linked yet, set user_id and upsert a team_members row.
-  UPDATE public.players
-  SET user_id = NEW.id
-  WHERE LOWER(TRIM(athlete_email)) = LOWER(TRIM(NEW.email))
-    AND user_id IS NULL;
-
-  -- The existing trigger fn_sync_player_membership_on_link fires on each
-  -- players.user_id update and upserts the team_members row automatically,
-  -- so no explicit team_members INSERT is needed here.
-
-  RETURN NEW;
+  UPDATE public.team_members
+  SET role = 'owner'
+  WHERE team_id = p_team_id
+    AND user_id = p_new_owner_user_id;
 END;
 $$;
 
--- Attach the trigger to public.users (after handle_new_user has inserted the row)
-DROP TRIGGER IF EXISTS trg_auto_link_players_on_signup ON public.users;
-CREATE TRIGGER trg_auto_link_players_on_signup
-  AFTER INSERT ON public.users
-  FOR EACH ROW
-  EXECUTE FUNCTION public.fn_auto_link_players_on_signup();
-```
-
-> **Note:** `fn_sync_player_membership_on_link` (already in place) fires on every
-> `players.user_id` transition from NULL → UUID, so the `team_members` upsert
-> is handled automatically — no duplication required here.
-
----
-
-## Section 8 — Verification
-
-```sql
--- Confirm columns exist and data migrated correctly
-SELECT id, first_name, last_name, name
-FROM public.players
-LIMIT 20;
-
--- Confirm team_members row created after linking
-SELECT tm.*, p.first_name, p.last_name
-FROM public.team_members tm
-LEFT JOIN public.players p ON p.id = tm.player_id
-WHERE tm.team_id = '<your-team-id>'
-ORDER BY tm.created_at DESC
-LIMIT 10;
+-- Restrict execution to authenticated users only.
+REVOKE ALL ON FUNCTION public.transfer_ownership(uuid, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.transfer_ownership(uuid, uuid) TO authenticated;
 ```

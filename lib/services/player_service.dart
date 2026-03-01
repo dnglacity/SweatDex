@@ -80,17 +80,16 @@ class PlayerService {
 
   Future<String?> _resolveUserId() async {
     try {
-      final authUser = _supabase.auth.currentUser;
-      if (authUser == null) return null;
+      if (_supabase.auth.currentUser == null) return null;
 
-      // Single indexed lookup using idx_users_user_id.
-      final row = await _supabase
-          .from('users')
-          .select('id')
-          .eq('user_id', authUser.id)
-          .maybeSingle();
-
-      return row?['id'] as String?;
+      // Use the SECURITY DEFINER RPC — runs as the function owner so it
+      // bypasses RLS and resolves auth.uid() → public.users.id in one
+      // round-trip. Because the RPC executes inside the DB session that
+      // already owns the handle_new_user trigger commit, the trigger-race
+      // that required an exponential-backoff retry loop on direct table
+      // queries is no longer a concern.
+      final result = await _supabase.rpc('get_current_user_id');
+      return result as String?;
     } catch (e) {
       debugPrint('_resolveUserId error: $e');
       // Reset so the next call retries (e.g. after a network blip).
@@ -100,13 +99,23 @@ class PlayerService {
   }
 
   // In-memory team list cache — invalidated whenever membership changes.
+  // Also expires after _kTeamCacheTtl to prevent stale data on long sessions
+  // or shared devices (e.g. a gym iPad used by multiple coaches).
+  static const Duration _kTeamCacheTtl = Duration(minutes: 5);
   List<Map<String, dynamic>>? _teamsCache;
+  DateTime? _teamsCacheTime;
+
+  bool get _teamsCacheValid =>
+      _teamsCache != null &&
+      _teamsCacheTime != null &&
+      DateTime.now().difference(_teamsCacheTime!) < _kTeamCacheTtl;
 
   /// Clears both the team list cache and the pending user-ID future.
   /// Must be called whenever team membership or the signed-in user changes.
   void _invalidateTeamCache() {
-    _userIdFuture = null; // force re-resolve on next call
-    _teamsCache   = null;
+    _userIdFuture  = null; // force re-resolve on next call
+    _teamsCache    = null;
+    _teamsCacheTime = null;
   }
 
   /// Clears all in-memory and on-disk caches. Call on sign-out.
@@ -142,7 +151,7 @@ class PlayerService {
 
   /// Converts a raw Supabase response list to typed [Player] objects.
   List<Player> _mapPlayers(List<dynamic> raw) =>
-      raw.cast<Map<String, dynamic>>().map(Player.fromMap).toList();
+      raw.map((e) => Player.fromMap(e as Map<String, dynamic>)).toList();
 
   /// Inserts a new player row and returns the generated UUID.
   Future<String> addPlayerAndReturnId(Player player) async {
@@ -198,6 +207,8 @@ class PlayerService {
     required int from,
     required int to,
   }) async {
+    assert(from >= 0, 'from must be >= 0');
+    assert(to >= from, 'to must be >= from');
     try {
       final response = await _supabase
           .from('players')
@@ -349,39 +360,18 @@ class PlayerService {
   /// DB read — critical after player links or team creation.
   Future<List<Map<String, dynamic>>> getTeams(
       {bool forceRefresh = false}) async {
-    if (!forceRefresh && _teamsCache != null) return _teamsCache!;
+    if (!forceRefresh && _teamsCacheValid) return _teamsCache!;
 
     try {
-      final authUser = _supabase.auth.currentUser;
-      if (authUser == null) throw Exception('Not signed in.');
+      if (_supabase.auth.currentUser == null) throw Exception('Not signed in.');
 
-      // Resolve public.users.id — uses the deduplicated future.
-      var userRow = await _supabase
-          .from('users')
-          .select('id')
-          .eq('user_id', authUser.id)
-          .maybeSingle();
-
-      if (userRow == null) {
-        // One retry at 800 ms for brand-new sign-ups where handle_new_user
-        // may not have committed yet.
-        await Future.delayed(const Duration(milliseconds: 800));
-        userRow = await _supabase
-            .from('users')
-            .select('id')
-            .eq('user_id', authUser.id)
-            .maybeSingle();
-
-        if (userRow == null) {
-          throw Exception(
-            'User profile not found. Please sign out and sign in again.',
-          );
-        }
+      // Resolve public.users.id via the deduplicated, backoff-retrying resolver.
+      final resolvedId = await _getCurrentUserId();
+      if (resolvedId == null) {
+        throw Exception(
+          'User profile not found. Please sign out and sign in again.',
+        );
       }
-
-      // Cache the resolved ID so _getCurrentUserId() short-circuits.
-      final resolvedId = userRow['id'] as String;
-      _userIdFuture = Future.value(resolvedId);
 
       // Single joined query: team data + role in one round-trip.
       // RLS on team_members filters to only the caller's rows.
@@ -394,6 +384,7 @@ class PlayerService {
           .eq('user_id', resolvedId)
           .order('teams(team_name)', ascending: true);
 
+      _teamsCacheTime = DateTime.now();
       _teamsCache = (response as List<dynamic>)
           .cast<Map<String, dynamic>>()
           .map((item) {
@@ -702,31 +693,16 @@ class PlayerService {
   }
 
   /// Transfers the 'owner' role from the current user to [newOwnerUserId].
+  /// Transfers ownership to [newOwnerUserId] via the transfer_ownership
+  /// SECURITY DEFINER RPC, which demotes the current owner and promotes the
+  /// new owner atomically inside a single DB transaction.
   Future<void> transferOwnership(
       String teamId, String newOwnerUserId) async {
     try {
-      final isOwner = await _isTeamOwner(teamId);
-      if (!isOwner) {
-        throw Exception('Only the current owner can transfer ownership.');
-      }
-      final currentUserId = await _getCurrentUserId();
-      if (currentUserId == null) throw Exception('Not logged in.');
-
-      // Demote current owner to coach, then promote the new owner.
-      // Both run as sequential statements inside Postgres's implicit
-      // transaction per statement.
-      await _supabase
-          .from('team_members')
-          .update({'role': 'coach'})
-          .eq('team_id', teamId)
-          .eq('user_id', currentUserId);
-
-      await _supabase
-          .from('team_members')
-          .update({'role': 'owner'})
-          .eq('team_id', teamId)
-          .eq('user_id', newOwnerUserId);
-
+      await _supabase.rpc('transfer_ownership', params: {
+        'p_team_id':           teamId,
+        'p_new_owner_user_id': newOwnerUserId,
+      });
       _invalidateTeamCache();
     } catch (e) {
       throw Exception('Error transferring ownership: $e');
@@ -840,20 +816,66 @@ class PlayerService {
     }
   }
 
-  /// Updates the starters and substitutes JSONB arrays on a roster row.
-  /// Only sends the two JSONB fields — not the full row.
+  /// Updates the mutable metadata (game_date) on an existing roster row.
+  Future<void> updateGameRosterMeta({
+    required String rosterId,
+    String? gameDate,
+  }) async {
+    try {
+      await _supabase.from('game_rosters').update({
+        'game_date': gameDate,
+      }).eq('id', rosterId);
+    } catch (e) {
+      throw Exception('Error updating game roster metadata: $e');
+    }
+  }
+
+  /// Updates the starters, substitutes, and starter_slots on a roster row.
   Future<void> updateGameRosterLineup({
     required String rosterId,
     required List<Map<String, dynamic>> starters,
     required List<Map<String, dynamic>> substitutes,
+    required int starterSlots,
   }) async {
     try {
       await _supabase.from('game_rosters').update({
-        'starters':    starters,
-        'substitutes': substitutes,
+        'starters':     starters,
+        'substitutes':  substitutes,
+        'starter_slots': starterSlots,
       }).eq('id', rosterId);
     } catch (e) {
       throw Exception('Error updating game roster lineup: $e');
+    }
+  }
+
+  /// Duplicates an existing game roster under [newTitle], copying starters,
+  /// substitutes, and starter_slots from the source row. Returns the new UUID.
+  Future<String> duplicateGameRoster({
+    required String sourceRosterId,
+    required String teamId,
+    required String newTitle,
+  }) async {
+    try {
+      final source = await getGameRosterById(sourceRosterId);
+      if (source == null) throw Exception('Source roster not found');
+      final userId = await _getCurrentUserId();
+      final result = await _supabase
+          .from('game_rosters')
+          .insert({
+            'team_id':       teamId,
+            'title':         newTitle,
+            'game_date':     null,
+            'starter_slots': source['starter_slots'] ?? 5,
+            'starters':      source['starters']     ?? [],
+            'substitutes':   source['substitutes']  ?? [],
+            // ignore: use_null_aware_elements
+            if (userId != null) 'created_by': userId,
+          })
+          .select('id')
+          .single();
+      return result['id'] as String;
+    } catch (e) {
+      throw Exception('Error duplicating game roster: $e');
     }
   }
 

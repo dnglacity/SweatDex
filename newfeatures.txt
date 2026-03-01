@@ -1,0 +1,41 @@
+## High Impact
+
+1. Attendance History / Reports
+   The app tracks attendance per session but has no way to view history. A simple attendance log per player (dates + statuses) would be very useful for coaches and parents.
+
+2. Player Quick-Edit on Roster Row xx
+   Currently editing a player requires navigating away. An inline edit bottom sheet (tap the player row) for jersey number, position, and status would save a lot of navigation.
+
+3. Bulk Attendance Toggle xx
+   "Mark all present" / "Mark all absent" buttons on the roster screen. Coaches shouldn't have to tap every player one-by-one at the start of practice.
+
+4. Game Roster Reuse xx
+   Allow loading a previously saved game roster as a starting point for a new one, rather than rebuilding from scratch every game.
+
+## Medium Impact
+
+5. Player Search/Filter on Roster
+   With paginated loading, finding a specific player requires scrolling. A search bar or filter by position/status/grade would help.
+
+6. Jersey Number Uniqueness Warning
+   When adding/editing a player, warn if the jersey number is already taken on that team (not a hard block, just a warning).
+
+7. Team Invite Link / QR Code
+   Instead of manually entering emails in manage_members_screen, generate a shareable invite link or QR code for players/parents to self-join.
+
+8. Position Sort on Game Roster
+   In game_roster_screen, let coaches sort the lineup by position groupings (e.g., all guards together, all forwards together).
+
+## Low Impact / Polish
+
+9. Swipe-to-Cycle Status
+   On the roster, swiping a player row could cycle through present → late → absent instead of needing the current dismiss gesture or menu.
+
+10. Player Count Badge on Team Cards
+    Show "(12 players)" on the team selection cards so coaches know roster size at a glance before entering.
+
+11. Offline Indicator
+    A subtle banner when the app is operating from cache (no connection) so users understand why data may be stale.
+
+12. Grade Filter for Multi-Grade Teams
+    Filter roster by grade (9th, 10th, etc.) — useful for coaches managing JV/varsity or multi-grade teams.
