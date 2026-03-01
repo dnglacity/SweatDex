@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/player_service.dart';
 
 // =============================================================================
 // reset_password_screen.dart  (AOD v1.10 — NEW)
@@ -22,6 +23,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   final _formKey            = GlobalKey<FormState>();
   final _passwordController = TextEditingController();
   final _confirmController  = TextEditingController();
+  final _playerService      = PlayerService();
 
   bool _obscurePassword = true; // toggles password visibility
   bool _obscureConfirm  = true; // toggles confirm field visibility
@@ -63,6 +65,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
           ),
         );
       }
+      _playerService.clearCache();
       await Supabase.instance.client.auth.signOut();
       // AuthWrapper routes to LoginScreen on signedOut event.
     } catch (e) {

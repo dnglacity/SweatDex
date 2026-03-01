@@ -318,20 +318,21 @@ class PlayerService {
     }
   }
 
-  /// Deletes multiple players by ID using a single inFilter() call.
+  /// Deletes multiple players by ID, scrubbing each from historical game
+  /// rosters via the delete_player SECURITY DEFINER RPC before removal.
   Future<void> bulkDeletePlayers(List<String> playerIds) async {
     if (playerIds.isEmpty) return;
-    try {
-      await _supabase.from('players').delete().inFilter('id', playerIds);
-    } catch (e) {
-      throw Exception('Error bulk deleting players: $e');
+    // Fire RPCs sequentially; each scrubs rosters then deletes the row.
+    for (final id in playerIds) {
+      await deletePlayer(id);
     }
   }
 
-  /// Deletes a single player row.
+  /// Deletes a player and scrubs their entries from all historical game
+  /// rosters via the delete_player SECURITY DEFINER RPC.
   Future<void> deletePlayer(String id) async {
     try {
-      await _supabase.from('players').delete().eq('id', id);
+      await _supabase.rpc('delete_player', params: {'p_player_id': id});
     } catch (e) {
       throw Exception('Failed to delete player: $e');
     }

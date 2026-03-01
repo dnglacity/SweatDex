@@ -626,6 +626,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   // ── Sign Out ──────────────────────────────────────────────────────────────
 
   Future<void> _signOut() async {
+    _playerService.clearCache();
     await _authService.signOut();
     // AuthWrapper reacts to the auth stream and navigates to LoginScreen.
   }

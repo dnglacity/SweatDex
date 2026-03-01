@@ -1,209 +1,162 @@
--- ============================================================
--- Apex On Deck — Supabase Consolidated Export Script
--- Run in the Supabase SQL Editor.
--- Copy the single JSON result into supabase_blueprint.json
--- (replaces supabase_blueprint.json, supabase_functions.json,
---  supabase_policies.json, and supabase_output.json).
--- ============================================================
+## v1.12 — Scrub deleted player data from historical game rosters
 
-SELECT jsonb_pretty(
-  jsonb_build_object(
+Run the following SQL in the Supabase SQL Editor.
 
-    -- --------------------------------------------------------
-    -- 1. SCHEMA BLUEPRINT
-    --    Columns from all public tables and views, ordered by
-    --    table then ordinal position.
-    -- --------------------------------------------------------
-    'blueprint', (
-      SELECT jsonb_agg(
-        jsonb_build_object(
-          'table_name',     c.table_name,
-          'column_name',    c.column_name,
-          'data_type',      c.data_type,
-          'is_nullable',    c.is_nullable,
-          'column_default', c.column_default
-        )
-        ORDER BY c.table_name, c.ordinal_position
-      )
-      FROM information_schema.columns c
-      WHERE c.table_schema = 'public'
-    ),
+---
 
-    -- --------------------------------------------------------
-    -- 2. FUNCTIONS
-    --    Metadata + full definition for all routines in the
-    --    public and private schemas (excludes aggregates).
-    -- --------------------------------------------------------
-    'functions', (
-      SELECT jsonb_agg(
-        jsonb_build_object(
-          'schema_name',   n.nspname,
-          'function_name', p.proname,
-          'arguments',     pg_get_function_arguments(p.oid),
-          'return_type',   pg_get_function_result(p.oid),
-          'security_type', CASE WHEN p.prosecdef THEN 'Security Definer' ELSE 'Security Invoker' END,
-          'definition',    pg_get_functiondef(p.oid)
-        )
-        ORDER BY n.nspname, p.proname
-      )
-      FROM pg_proc p
-      JOIN pg_namespace n ON n.oid = p.pronamespace
-      WHERE n.nspname IN ('public', 'private')
-        AND p.prokind IN ('f', 'p')
-    ),
+### 1. Helper: `scrub_deleted_player_from_rosters`
 
-    -- --------------------------------------------------------
-    -- 3. POLICIES
-    --    All RLS policies on public tables.
-    -- --------------------------------------------------------
-    'policies', (
-      SELECT jsonb_agg(
-        jsonb_build_object(
-          'schemaname',        schemaname,
-          'tablename',         tablename,
-          'policyname',        policyname,
-          'roles',             roles::text,
-          'operation',         cmd,
-          'using_expression',  qual,
-          'check_expression',  with_check
-        )
-        ORDER BY tablename, policyname
-      )
-      FROM pg_policies
-      WHERE schemaname = 'public'
-    ),
+Walks every `game_rosters` row and removes entries whose `player_id` matches
+the deleted player from both the `starters` and `substitutes` JSONB arrays.
+Called internally by `delete_player` and `delete_account`.
 
-    -- --------------------------------------------------------
-    -- 4. TRIGGERS
-    --    All triggers on public tables, including the full
-    --    trigger function definition. Captures handle_new_user,
-    --    fn_sync_player_membership_on_link, etc.
-    -- --------------------------------------------------------
-    'triggers', (
-      SELECT jsonb_agg(
-        jsonb_build_object(
-          'trigger_name',      t.trigger_name,
-          'table_name',        t.event_object_table,
-          'event',             t.event_manipulation,
-          'timing',            t.action_timing,
-          'orientation',       t.action_orientation,
-          'condition',         t.action_condition,
-          'function_schema',   n.nspname,
-          'function_name',     p.proname,
-          'function_definition', pg_get_functiondef(p.oid)
-        )
-        ORDER BY t.event_object_table, t.trigger_name
-      )
-      FROM information_schema.triggers t
-      JOIN pg_trigger pt
-        ON pt.tgname = t.trigger_name
-      JOIN pg_class  pc
-        ON pc.oid = pt.tgrelid
-        AND pc.relname = t.event_object_table
-      JOIN pg_proc   p
-        ON p.oid = pt.tgfoid
-      JOIN pg_namespace n
-        ON n.oid = p.pronamespace
-      WHERE t.trigger_schema = 'public'
-        AND NOT pt.tgisinternal
-    ),
+```sql
+CREATE OR REPLACE FUNCTION public.scrub_deleted_player_from_rosters(
+  p_player_id uuid
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_roster RECORD;
+  v_new_starters  jsonb;
+  v_new_subs      jsonb;
+BEGIN
+  FOR v_roster IN
+    SELECT id, starters, substitutes
+    FROM   game_rosters
+    WHERE  starters    @> jsonb_build_array(jsonb_build_object('player_id', p_player_id::text))
+        OR substitutes @> jsonb_build_array(jsonb_build_object('player_id', p_player_id::text))
+  LOOP
+    -- Filter out any element whose player_id matches the deleted player.
+    SELECT COALESCE(
+             jsonb_agg(elem ORDER BY ordinality),
+             '[]'::jsonb
+           )
+    INTO   v_new_starters
+    FROM   jsonb_array_elements(v_roster.starters) WITH ORDINALITY AS t(elem, ordinality)
+    WHERE  (elem->>'player_id')::uuid <> p_player_id;
 
-    -- --------------------------------------------------------
-    -- 5. FOREIGN KEYS
-    --    Referential integrity constraints across public tables.
-    --    Shows the constrained column(s) and what they reference.
-    -- --------------------------------------------------------
-    'foreign_keys', (
-      SELECT jsonb_agg(
-        jsonb_build_object(
-          'constraint_name',    tc.constraint_name,
-          'table_name',         tc.table_name,
-          'column_name',        kcu.column_name,
-          'foreign_table_name', ccu.table_name,
-          'foreign_column_name',ccu.column_name,
-          'on_update',          rc.update_rule,
-          'on_delete',          rc.delete_rule
-        )
-        ORDER BY tc.table_name, tc.constraint_name
-      )
-      FROM information_schema.table_constraints tc
-      JOIN information_schema.key_column_usage kcu
-        ON kcu.constraint_name = tc.constraint_name
-        AND kcu.table_schema   = tc.table_schema
-      JOIN information_schema.referential_constraints rc
-        ON rc.constraint_name  = tc.constraint_name
-        AND rc.constraint_schema = tc.table_schema
-      JOIN information_schema.constraint_column_usage ccu
-        ON ccu.constraint_name = rc.unique_constraint_name
-        AND ccu.table_schema   = tc.table_schema
-      WHERE tc.constraint_type = 'FOREIGN KEY'
-        AND tc.table_schema    = 'public'
-    ),
+    SELECT COALESCE(
+             jsonb_agg(elem ORDER BY ordinality),
+             '[]'::jsonb
+           )
+    INTO   v_new_subs
+    FROM   jsonb_array_elements(v_roster.substitutes) WITH ORDINALITY AS t(elem, ordinality)
+    WHERE  (elem->>'player_id')::uuid <> p_player_id;
 
-    -- --------------------------------------------------------
-    -- 6. INDEXES
-    --    All non-system indexes on public tables, including
-    --    the full CREATE INDEX statement for reconstruction.
-    -- --------------------------------------------------------
-    'indexes', (
-      SELECT jsonb_agg(
-        jsonb_build_object(
-          'index_name',   i.relname,
-          'table_name',   t.relname,
-          'is_unique',    ix.indisunique,
-          'is_primary',   ix.indisprimary,
-          'definition',   pg_get_indexdef(ix.indexrelid)
-        )
-        ORDER BY t.relname, i.relname
-      )
-      FROM pg_index     ix
-      JOIN pg_class     t  ON t.oid  = ix.indrelid
-      JOIN pg_class     i  ON i.oid  = ix.indexrelid
-      JOIN pg_namespace n  ON n.oid  = t.relnamespace
-      WHERE n.nspname = 'public'
-        AND t.relkind = 'r'          -- base tables only (not views)
-        AND NOT ix.indisprimary      -- exclude PKs (already in blueprint)
-    ),
+    UPDATE game_rosters
+    SET    starters    = v_new_starters,
+           substitutes = v_new_subs
+    WHERE  id = v_roster.id;
+  END LOOP;
+END;
+$$;
+```
 
-    -- --------------------------------------------------------
-    -- 7. VIEWS
-    --    Definition (CREATE VIEW SQL) for every view in the
-    --    public schema, e.g. v_owner_user_id, v_stuck_registrations.
-    -- --------------------------------------------------------
-    'views', (
-      SELECT jsonb_agg(
-        jsonb_build_object(
-          'view_name',   v.table_name,
-          'definition',  pg_get_viewdef(
-                           (quote_ident(v.table_schema) || '.' || quote_ident(v.table_name))::regclass,
-                           true   -- pretty-print
-                         )
-        )
-        ORDER BY v.table_name
-      )
-      FROM information_schema.views v
-      WHERE v.table_schema = 'public'
-    ),
+---
 
-    -- --------------------------------------------------------
-    -- 8. RLS STATUS
-    --    Which public tables have row-level security enabled
-    --    and/or forced (forcerowsecurity applies to table owners).
-    -- --------------------------------------------------------
-    'rls_status', (
-      SELECT jsonb_agg(
-        jsonb_build_object(
-          'table_name',      c.relname,
-          'rls_enabled',     c.relrowsecurity,
-          'rls_forced',      c.relforcerowsecurity
-        )
-        ORDER BY c.relname
-      )
-      FROM pg_class     c
-      JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE n.nspname = 'public'
-        AND c.relkind  = 'r'
-    )
+### 2. RPC: `delete_player`
 
-  )
-) AS consolidated_blueprint;
+SECURITY DEFINER RPC callable by coaches/owners. Scrubs the player from all
+historical game rosters before deleting the `players` row. RLS on `players`
+still enforces that the caller has write access to the team.
+
+```sql
+CREATE OR REPLACE FUNCTION public.delete_player(p_player_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_team_id uuid;
+  v_role    text;
+BEGIN
+  -- Resolve the player's team so we can authorise the caller.
+  SELECT team_id INTO v_team_id
+  FROM   players
+  WHERE  id = p_player_id;
+
+  IF v_team_id IS NULL THEN
+    RAISE EXCEPTION 'Player not found.';
+  END IF;
+
+  -- Only owners, coaches, and team_managers may delete players.
+  SELECT role INTO v_role
+  FROM   team_members
+  WHERE  team_id = v_team_id
+    AND  user_id = private.get_my_user_id();
+
+  IF v_role IS NULL OR v_role NOT IN ('owner', 'coach', 'team_manager') THEN
+    RAISE EXCEPTION 'Only coaches and owners can delete players.';
+  END IF;
+
+  -- 1. Scrub the player from all historical game rosters.
+  PERFORM public.scrub_deleted_player_from_rosters(p_player_id);
+
+  -- 2. Delete the player row (cascades handle guardian_links etc.).
+  DELETE FROM players WHERE id = p_player_id;
+END;
+$$;
+```
+
+---
+
+### 3. RPC: `delete_account`
+
+Deletes the calling user's own account. Before removing auth/public rows, it
+scrubs every player linked to the account from all historical game rosters.
+Replace the existing `delete_account` function if one already exists.
+
+```sql
+CREATE OR REPLACE FUNCTION public.delete_account()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_auth_uid  uuid := auth.uid();
+  v_user_id   uuid;
+  v_player_id uuid;
+BEGIN
+  -- Resolve public.users.id for this auth user.
+  SELECT id INTO v_user_id
+  FROM   public.users
+  WHERE  user_id = v_auth_uid;
+
+  -- Scrub every player linked to this account from historical game rosters.
+  FOR v_player_id IN
+    SELECT id FROM players WHERE user_id = v_user_id
+  LOOP
+    PERFORM public.scrub_deleted_player_from_rosters(v_player_id);
+  END LOOP;
+
+  -- Remove team memberships (cascades or explicit).
+  DELETE FROM team_members WHERE user_id = v_user_id;
+
+  -- Remove the public profile row.
+  DELETE FROM public.users WHERE id = v_user_id;
+
+  -- Delete the auth user — this signs out all sessions.
+  DELETE FROM auth.users WHERE id = v_auth_uid;
+END;
+$$;
+```
+
+---
+
+### 4. Grants
+
+Ensure authenticated users can call the new RPCs.
+
+```sql
+GRANT EXECUTE ON FUNCTION public.delete_player(uuid)        TO authenticated;
+GRANT EXECUTE ON FUNCTION public.delete_account()           TO authenticated;
+-- scrub_deleted_player_from_rosters is internal; no direct grant needed.
+REVOKE EXECUTE ON FUNCTION public.scrub_deleted_player_from_rosters(uuid) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.scrub_deleted_player_from_rosters(uuid) TO authenticated;
+```

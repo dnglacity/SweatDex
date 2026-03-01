@@ -1,5 +1,0 @@
-[
-  {
-    "pg_get_functiondef": "CREATE OR REPLACE FUNCTION public.redeem_team_invite(p_code text)\n RETURNS TABLE(team_id uuid, team_name text, role text)\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  DECLARE\r\n    v_invite  team_invites%ROWTYPE;\r\n    v_user_id uuid := auth.uid();\r\n  BEGIN\r\n    SELECT *\r\n      INTO v_invite\r\n      FROM team_invites ti\r\n     WHERE ti.code = p_code\r\n       AND ti.is_active = true\r\n       AND ti.expires_at > now();\r\n\r\n    IF NOT FOUND THEN\r\n      RAISE EXCEPTION 'Invalid or expired invite code';\r\n    END IF;\r\n\r\n    INSERT INTO team_members (team_id, user_id, role)\r\n    VALUES (v_invite.team_id, v_user_id, 'player')\r\n    ON CONFLICT (team_id, user_id) DO NOTHING;\r\n\r\n    RETURN QUERY\r\n      SELECT t.id AS team_id, t.name AS team_name, tm.role\r\n        FROM teams t\r\n        JOIN team_members tm\r\n          ON tm.team_id = t.id\r\n         AND tm.user_id = v_user_id\r\n       WHERE t.id = v_invite.team_id;\r\n  END;\r\n  $function$\n"
-  }
-]

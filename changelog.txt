@@ -1,3 +1,23 @@
+v1.12 02.28.2026 Scrub deleted player data from historical game rosters
+- Added: scrub_deleted_player_from_rosters(p_player_id uuid) Postgres helper — removes all entries matching the deleted player from starters and substitutes JSONB arrays across every game_rosters row
+- Added: delete_player(p_player_id uuid) SECURITY DEFINER RPC — authorises caller (owner/coach/team_manager), scrubs rosters, then deletes the player row
+- Changed: delete_account() RPC now scrubs all players linked to the account from historical game rosters before removing auth/profile rows
+- Changed: PlayerService.deletePlayer() now calls the delete_player RPC instead of a direct table DELETE
+- Changed: PlayerService.bulkDeletePlayers() now delegates to deletePlayer() per-ID so every deletion goes through the scrub path
+
+v1.12 02.28.2026 Cache wipe on all sign-out paths
+- Fixed: account_settings_screen._signOut() now calls _playerService.clearCache() before signOut() — previously skipped
+- Fixed: reset_password_screen._submit() now calls _playerService.clearCache() before auth.signOut() — previously skipped, also bypassed AuthService entirely
+- Result: in-memory and disk caches are wiped on every sign-out path, preventing stale data leaking between accounts on a shared device
+
+v1.12 02.28.2026 Auto-populate players on invite code redemption
+- Fixed: added DROP FUNCTION IF EXISTS before CREATE OR REPLACE in supabase_script.md to resolve "cannot change return type of existing function" error on redeploy
+
+v1.12 02.28.2026 Auto-populate players on invite code redemption
+- Changed: redeem_team_invite RPC now inserts a players row pre-filled with first_name, last_name, and athlete_email from public.users, with user_id already linked, when a user redeems an invite code
+- Changed: team_members row is inserted with player_id already set, so the link is established immediately
+- Result: coaches only need to fill in jersey number, grade, position, etc. — no manual player creation or linking required
+
 v1.12 02.28.2026 2205 Supabase schema consolidation
 - Added: supabase_script.md — single SQL script that exports blueprint, functions, policies, triggers, foreign keys, indexes, views, and RLS status into one JSON (supabase_schema.json)
 - Added: supabase_schema.json — consolidated Supabase snapshot replacing the three separate files
