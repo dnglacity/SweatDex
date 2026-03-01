@@ -1,3 +1,8 @@
+v1.12 02.28.2026 2205 Supabase schema consolidation
+- Added: supabase_script.md — single SQL script that exports blueprint, functions, policies, triggers, foreign keys, indexes, views, and RLS status into one JSON (supabase_schema.json)
+- Added: supabase_schema.json — consolidated Supabase snapshot replacing the three separate files
+- Removed: supabase_blueprint.json, supabase_functions.json, supabase_policies.json
+
 v1.12 02.28.2026 2150 Team invite system bug fix
 - Fixed: redeem_team_invite RPC threw "column reference team_id is ambiguous" error; resolved by renaming RETURNS TABLE OUT parameters to out_team_id/out_team_name/out_role and correcting t.name to t.team_name
 - Fixed: redeemTeamInvite() in player_service.dart updated to read out_team_id and out_team_name keys returned by the revised RPC
