@@ -1,24 +1,27 @@
 import 'package:flutter/material.dart';
 
 // =============================================================================
-// player.dart  (AOD v1.7)
+// player.dart  (AOD v1.8)
 //
-// CHANGE (Notes.txt v1.7):
-//   • Renamed `studentId`    → `athleteId`
-//   • Renamed `studentEmail` → `athleteEmail`
-//     (DB columns renamed in migration; old column names dropped)
-//   • Added `guardianEmail`  — optional parent/guardian email field.
-//   • Added `grade`          — optional grade (9–12). Auto-incremented
-//     July 1 by a DB scheduled function; local to the team (coaches see it).
-//   • Added `gradeUpdatedAt` — tracks when grade was last incremented.
+// CHANGE (v1.8):
+//   • Split `name` into `firstName` + `lastName` (DB columns: first_name,
+//     last_name). The `name` getter concatenates them for display compatibility
+//     so all existing callers (screens, game roster JSONB) continue to work.
+//   • `fromMap` falls back to splitting the legacy `name` column when
+//     first_name/last_name are absent (safe during migration window).
+//   • `toMap` writes first_name + last_name; no longer writes `name`
+//     (DB keeps a generated/trigger-maintained `name` column if needed).
 //
-// All v1.6 fields (userId, position, nickname, etc.) retained.
+// All v1.7 fields retained.
 // =============================================================================
 
 class Player {
   final String id;
   final String teamId;
-  final String name;
+
+  // CHANGE (v1.8): stored as separate columns in the DB.
+  final String firstName;
+  final String lastName;
 
   // CHANGE (v1.7): renamed from studentId.
   final String? athleteId;
@@ -26,12 +29,10 @@ class Player {
   // CHANGE (v1.7): renamed from studentEmail.
   final String? athleteEmail;
 
-  // CHANGE (v1.7): parent/guardian email (optional). Triggers guardian link
-  // when both the player and guardian have accounts.
+  // CHANGE (v1.7): parent/guardian email (optional).
   final String? guardianEmail;
 
-  // CHANGE (v1.7): academic grade (9–12). Nullable = not set.
-  // Auto-incremented to LEAST(grade+1, 13) on July 1 server-side.
+  // CHANGE (v1.7): academic grade (9–12). Auto-incremented July 1 server-side.
   final int? grade;
 
   /// Date the grade was last auto-incremented.
@@ -50,7 +51,8 @@ class Player {
   const Player({
     required this.id,
     required this.teamId,
-    required this.name,
+    required this.firstName,
+    required this.lastName,
     this.athleteId,
     this.athleteEmail,
     this.guardianEmail,
@@ -66,17 +68,35 @@ class Player {
 
   // ── Deserialise from Supabase row ──────────────────────────────────────────
   factory Player.fromMap(Map<String, dynamic> map) {
-    // Support both old column names (student_*) and new (athlete_*) during
-    // any transition period where both might exist in the DB response.
-    final athleteId    = map['athlete_id']    as String?
-                      ?? map['student_id']    as String?;
+    // Support both old column names (student_*) and new (athlete_*).
+    final athleteId    = map['athlete_id']   as String?
+                      ?? map['student_id']   as String?;
     final athleteEmail = map['athlete_email'] as String?
                       ?? map['student_email'] as String?;
 
+    // CHANGE (v1.8): read first_name/last_name; fall back to splitting
+    // the legacy name column during the migration window.
+    final rawFirst = map['first_name'] as String?;
+    final rawLast  = map['last_name']  as String?;
+    String first   = rawFirst ?? '';
+    String last    = rawLast  ?? '';
+
+    if (first.isEmpty && last.isEmpty) {
+      final legacy   = map['name'] as String? ?? '';
+      final spaceIdx = legacy.indexOf(' ');
+      if (spaceIdx > 0) {
+        first = legacy.substring(0, spaceIdx);
+        last  = legacy.substring(spaceIdx + 1);
+      } else {
+        first = legacy;
+      }
+    }
+
     return Player(
-      id:             map['id']           as String? ?? '',
-      teamId:         map['team_id']      as String? ?? '',
-      name:           map['name']         as String? ?? '',
+      id:             map['id']      as String? ?? '',
+      teamId:         map['team_id'] as String? ?? '',
+      firstName:      first,
+      lastName:       last,
       athleteId:      athleteId,
       athleteEmail:   athleteEmail,
       guardianEmail:  map['guardian_email'] as String?,
@@ -85,10 +105,10 @@ class Player {
                         ? DateTime.tryParse(map['grade_updated_at'] as String)
                         : null,
       jerseyNumber:   map['jersey_number']?.toString(),
-      nickname:       map['nickname']     as String?,
-      position:       map['position']     as String?,
-      userId:         map['user_id']      as String?,
-      status:         map['status']       as String? ?? 'present',
+      nickname:       map['nickname']  as String?,
+      position:       map['position']  as String?,
+      userId:         map['user_id']   as String?,
+      status:         map['status']    as String? ?? 'present',
       createdAt:      map['created_at'] != null
                         ? DateTime.tryParse(map['created_at'] as String)
                         : null,
@@ -99,7 +119,8 @@ class Player {
   Map<String, dynamic> toMap() {
     return {
       'team_id':        teamId,
-      'name':           name,
+      'first_name':     firstName,
+      'last_name':      lastName,
       'athlete_id':     athleteId,
       'athlete_email':  athleteEmail,
       'guardian_email': guardianEmail,
@@ -116,7 +137,8 @@ class Player {
   Player copyWith({
     String? id,
     String? teamId,
-    String? name,
+    String? firstName,
+    String? lastName,
     String? athleteId,
     String? athleteEmail,
     String? guardianEmail,
@@ -132,7 +154,8 @@ class Player {
     return Player(
       id:             id             ?? this.id,
       teamId:         teamId         ?? this.teamId,
-      name:           name           ?? this.name,
+      firstName:      firstName      ?? this.firstName,
+      lastName:       lastName       ?? this.lastName,
       athleteId:      athleteId      ?? this.athleteId,
       athleteEmail:   athleteEmail   ?? this.athleteEmail,
       guardianEmail:  guardianEmail  ?? this.guardianEmail,
@@ -148,6 +171,9 @@ class Player {
   }
 
   // ── Display helpers ────────────────────────────────────────────────────────
+
+  /// Full name — used throughout all existing screens unchanged.
+  String get name => '$firstName $lastName'.trim();
 
   String get displayJersey   => jerseyNumber ?? '-';
   String get displayName     => nickname != null ? '$name ($nickname)' : name;

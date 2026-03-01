@@ -120,13 +120,6 @@
   },
   {
     "table_name": "players",
-    "column_name": "name",
-    "data_type": "text",
-    "is_nullable": "NO",
-    "column_default": "''::text"
-  },
-  {
-    "table_name": "players",
     "column_name": "athlete_id",
     "data_type": "text",
     "is_nullable": "YES",
@@ -196,6 +189,27 @@
     "column_default": "now()"
   },
   {
+    "table_name": "players",
+    "column_name": "first_name",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": "''::text"
+  },
+  {
+    "table_name": "players",
+    "column_name": "last_name",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": "''::text"
+  },
+  {
+    "table_name": "players",
+    "column_name": "name",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
     "table_name": "sports",
     "column_name": "id",
     "data_type": "uuid",
@@ -222,6 +236,13 @@
     "data_type": "timestamp with time zone",
     "is_nullable": "NO",
     "column_default": "now()"
+  },
+  {
+    "table_name": "sports",
+    "column_name": "base_sport",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": "''::text"
   },
   {
     "table_name": "team_members",

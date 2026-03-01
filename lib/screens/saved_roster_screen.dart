@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/player_service.dart';
+import '../widgets/error_dialog.dart';
 import 'game_roster_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -311,11 +312,7 @@ class _SavedRosterScreenState extends State<SavedRosterScreen> {
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text('Error saving roster: $e'),
-                backgroundColor: Colors.red),
-          );
+          showErrorDialog(context, e);
         }
       }
     }
@@ -372,11 +369,7 @@ class _SavedRosterScreenState extends State<SavedRosterScreen> {
         // Realtime stream will remove the row from the list automatically.
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text('Error deleting: $e'),
-                backgroundColor: Colors.red),
-          );
+          showErrorDialog(context, e);
         }
       }
     }

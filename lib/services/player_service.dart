@@ -49,7 +49,7 @@ const _kUserColumns =
 
 /// Columns fetched from public.players.
 const _kPlayerColumns =
-    'id, team_id, user_id, name, athlete_id, athlete_email, '
+    'id, team_id, user_id, first_name, last_name, athlete_id, athlete_email, '
     'guardian_email, grade, grade_updated_at, jersey_number, '
     'nickname, position, status, created_at';
 
@@ -125,15 +125,14 @@ class PlayerService {
   /// Falls back to a single 'General' entry on any error so pickers work offline.
   Future<List<Map<String, dynamic>>> getSports() async {
     try {
-      // id + name + category is all the autocomplete widget needs.
       final response = await _supabase
           .from('sports')
-          .select('id, name, category')
+          .select('id, name, base_sport')
           .order('name', ascending: true);
       return (response as List).cast<Map<String, dynamic>>();
     } catch (e) {
       debugPrint('getSports error: $e');
-      return [{'id': null, 'name': 'General', 'category': 'Year-Round'}];
+      return [{'id': null, 'name': 'General', 'base_sport': 'General'}];
     }
   }
 
@@ -171,7 +170,7 @@ class PlayerService {
           .from('players')
           .select(_kPlayerColumns)
           .eq('team_id', teamId)
-          .order('name', ascending: true);
+          .order('last_name', ascending: true);
 
       final players = _mapPlayers(response as List<dynamic>);
 
@@ -204,7 +203,7 @@ class PlayerService {
           .from('players')
           .select(_kPlayerColumns)
           .eq('team_id', teamId)
-          .order('name', ascending: true)
+          .order('last_name', ascending: true)
           .range(from, to);
       return _mapPlayers(response as List<dynamic>);
     } catch (e) {
@@ -251,7 +250,7 @@ class PlayerService {
         .from('players')
         .stream(primaryKey: ['id'])
         .eq('team_id', teamId)
-        .order('name', ascending: true)
+        .order('last_name', ascending: true)
         .map((maps) => maps
             .cast<Map<String, dynamic>>()
             .map(Player.fromMap)
@@ -435,6 +434,7 @@ class PlayerService {
       await _supabase.rpc('create_team', params: {
         'p_team_name': teamName,
         'p_sport':     sport,
+        // ignore: use_null_aware_elements
         if (sportId != null) 'p_sport_id': sportId,
       });
       _invalidateTeamCache();
@@ -570,7 +570,7 @@ class PlayerService {
   /// Looks up a public.users row by email via the lookup_user_by_email RPC.
   ///
   /// FIX-1: normalises both List and Map return shapes from the RPC so the
-  /// caller always receives a Map<String,dynamic> or null.
+  /// caller always receives a `Map<String, dynamic>` or null.
   Future<Map<String, dynamic>?> lookupUserByEmail(String email) async {
     try {
       final result = await _supabase.rpc('lookup_user_by_email', params: {
@@ -829,6 +829,7 @@ class PlayerService {
             'starter_slots': starterSlots,
             'starters':      [],
             'substitutes':   [],
+            // ignore: use_null_aware_elements
             if (userId != null) 'created_by': userId,
           })
           .select('id')

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/player_service.dart';
 import '../services/auth_service.dart';
 import '../widgets/sport_autocomplete_field.dart'; // Shared autocomplete widget
+import '../widgets/error_dialog.dart';
 import 'roster_screen.dart';
 import 'player_self_view_screen.dart';
 import 'account_settings_screen.dart';
@@ -175,11 +176,7 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
       // AuthWrapper's StreamBuilder handles routing to LoginScreen on signedOut event.
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Error logging out: $e'),
-              backgroundColor: Colors.red),
-        );
+        showErrorDialog(context, e);
       }
     }
   }
@@ -326,11 +323,7 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text(e.toString().replaceAll('Exception: ', '')),
-                backgroundColor: Colors.red),
-          );
+          showErrorDialog(context, e);
         }
       }
     }
@@ -429,12 +422,7 @@ class _TeamSelectionScreenState extends State<TeamSelectionScreen> {
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(e.toString().replaceAll('Exception: ', '')),
-              backgroundColor: Colors.red,
-            ),
-          );
+          showErrorDialog(context, e);
         }
       }
     }

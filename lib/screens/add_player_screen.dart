@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/player.dart';
 import '../services/player_service.dart';
+import '../widgets/error_dialog.dart';
 
 // =============================================================================
 // add_player_screen.dart  (AOD v1.9 — BUG FIX Issue 1)
@@ -99,11 +100,8 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
       _page = 1;
       final p = widget.playerToEdit!;
 
-      // Split the stored full name back into first / last for the two fields.
-      final nameParts = p.name.split(' ');
-      _firstNameController.text = nameParts.isNotEmpty ? nameParts.first : '';
-      _lastNameController.text  =
-          nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
+      _firstNameController.text = p.firstName;
+      _lastNameController.text  = p.lastName;
 
       _jerseyController.text    = p.jerseyNumber  ?? '';
       _positionController.text  = p.position      ?? '';
@@ -213,7 +211,7 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
     try {
       final firstName = _firstNameController.text.trim();
       final lastName  = _lastNameController.text.trim();
-      final fullName  = '$firstName $lastName'.trim();
+      final fullName  = '$firstName $lastName'.trim(); // used for snackbar messages
 
       // Use the athlete email if one was entered on Page 1.
       final athleteEmail = _emailLookupController.text.trim().isEmpty
@@ -227,7 +225,8 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
       final player = Player(
         id:           widget.playerToEdit?.id ?? '',
         teamId:       widget.teamId,
-        name:         fullName,
+        firstName:    firstName,
+        lastName:     lastName,
         athleteEmail: athleteEmail,
         athleteId:    _athleteIdController.text.trim().isEmpty
                         ? null
@@ -262,23 +261,11 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
       }
 
       // Safety-net auto-link: if an athlete email was provided but _foundUserId
-      // was null (lookup skipped or failed), try linking by email now.
-      // This handles the case where the athlete registered after the coach
-      // first added them to the roster.
-      if (athleteEmail != null &&
-          athleteEmail.isNotEmpty &&
-          _foundUserId == null &&
-          mounted) {
+      // Always call the RPC when an athlete email is provided.
+      // The RPC sets players.user_id (no-op if already set) AND upserts the
+      // team_members row — which is the step that grants the athlete access.
+      if (athleteEmail != null && athleteEmail.isNotEmpty && mounted) {
         await _attemptAutoLink(playerId: savedPlayerId, email: athleteEmail);
-      } else if (athleteEmail != null && athleteEmail.isNotEmpty && mounted) {
-        // Account was found and user_id is already set — show a confirmation.
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$athleteEmail linked to player account.'),
-            backgroundColor: Colors.teal,
-            duration: const Duration(seconds: 3),
-          ),
-        );
       }
 
       // Auto-link guardian if an email was provided.
@@ -301,10 +288,7 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Error: $e'), backgroundColor: Colors.red),
-        );
+        showErrorDialog(context, e);
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -497,9 +481,9 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
                 margin: const EdgeInsets.only(bottom: 16),
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.teal.withOpacity(0.1),
+                  color: Colors.teal.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.teal.withOpacity(0.5)),
+                  border: Border.all(color: Colors.teal.withValues(alpha: 0.5)),
                 ),
                 child: const Row(
                   children: [
@@ -629,7 +613,7 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
 
             // ── Grade ──────────────────────────────────────────────────────
             DropdownButtonFormField<int?>(
-              value: _selectedGrade,
+              initialValue: _selectedGrade,
               decoration: const InputDecoration(
                 labelText: 'Grade',
                 prefixIcon: Icon(Icons.school_outlined),
@@ -737,7 +721,7 @@ class _StepIndicator extends StatelessWidget {
                   shape: BoxShape.circle,
                   color: isDone || isActive
                       ? cs.primary
-                      : cs.surfaceVariant,
+                      : cs.surfaceContainerHighest,
                 ),
                 child: Center(
                   child: isDone
@@ -759,7 +743,7 @@ class _StepIndicator extends StatelessWidget {
                 Expanded(
                   child: Container(
                     height: 2,
-                    color: isDone ? cs.primary : cs.surfaceVariant,
+                    color: isDone ? cs.primary : cs.surfaceContainerHighest,
                   ),
                 ),
             ],

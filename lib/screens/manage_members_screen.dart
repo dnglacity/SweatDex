@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/app_user.dart';
 import '../services/player_service.dart';
+import '../widgets/error_dialog.dart';
 import 'account_settings_screen.dart';
 
 // =============================================================================
@@ -138,7 +139,7 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
                 // Role selector — owners get all 4 non-owner roles.
                 if (_isOwner)
                   DropdownButtonFormField<String>(
-                    value: selectedRole,
+                    initialValue: selectedRole,
                     decoration: const InputDecoration(
                       labelText: 'Role',
                       prefixIcon: Icon(Icons.badge),
@@ -204,12 +205,7 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(e.toString().replaceAll('Exception: ', '')),
-              backgroundColor: Colors.red,
-            ),
-          );
+          showErrorDialog(context, e);
         }
       }
     }
@@ -247,6 +243,7 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
     final formKey           = GlobalKey<FormState>();
     String? selectedPlayerId;
 
+    if (!mounted) return;
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -266,7 +263,7 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
-                    value: selectedPlayerId,
+                    initialValue: selectedPlayerId,
                     decoration: const InputDecoration(
                       labelText: 'Select Player',
                       border: OutlineInputBorder(),
@@ -348,12 +345,7 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(e.toString().replaceAll('Exception: ', '')),
-              backgroundColor: Colors.red,
-            ),
-          );
+          showErrorDialog(context, e);
         }
       }
     }
@@ -406,12 +398,7 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
         );
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(e.toString().replaceAll('Exception: ', '')),
-              backgroundColor: Colors.red,
-            ),
-          );
+          showErrorDialog(context, e);
         }
       }
     }
@@ -428,22 +415,24 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => AlertDialog(
           title: Text('Change Role — ${member.name}'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: roles.map((r) {
-              final label = {
-                'coach':        'Coach',
-                'player':       'Player',
-                'team_parent':  'Team Parent',
-                'team_manager': 'Team Manager',
-              }[r]!;
-              return RadioListTile<String>(
-                value: r,
-                groupValue: selected,
-                title: Text(label),
-                onChanged: (v) => setLocal(() => selected = v!),
-              );
-            }).toList(),
+          content: RadioGroup<String>(
+            groupValue: selected,
+            onChanged: (v) => setLocal(() => selected = v!),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: roles.map((r) {
+                final label = {
+                  'coach':        'Coach',
+                  'player':       'Player',
+                  'team_parent':  'Team Parent',
+                  'team_manager': 'Team Manager',
+                }[r]!;
+                return RadioListTile<String>(
+                  value: r,
+                  title: Text(label),
+                );
+              }).toList(),
+            ),
           ),
           actions: [
             TextButton(
@@ -476,12 +465,7 @@ class _ManageMembersScreenState extends State<ManageMembersScreen> {
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(e.toString().replaceAll('Exception: ', '')),
-              backgroundColor: Colors.red,
-            ),
-          );
+          showErrorDialog(context, e);
         }
       }
     }

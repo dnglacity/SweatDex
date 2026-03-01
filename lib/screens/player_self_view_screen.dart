@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/player.dart';
+import '../services/auth_service.dart';
 import '../services/player_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -31,6 +32,7 @@ class PlayerSelfViewScreen extends StatefulWidget {
 
 class _PlayerSelfViewScreenState extends State<PlayerSelfViewScreen> {
   final _playerService = PlayerService();
+  final _authService = AuthService();
 
   /// The player row linked to the current auth account on this team.
   Player? _myPlayer;
@@ -45,6 +47,30 @@ class _PlayerSelfViewScreenState extends State<PlayerSelfViewScreen> {
   void initState() {
     super.initState();
     _loadData();
+  }
+
+  // ── Logout ─────────────────────────────────────────────────────────────────
+
+  Future<void> _performLogout() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Log Out'),
+        content: const Text('Are you sure you want to log out?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Log Out')),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    _playerService.clearCache();
+    await _authService.signOut();
+    // AuthWrapper's StreamBuilder handles routing to LoginScreen on signedOut event.
   }
 
   // ── Data loading ──────────────────────────────────────────────────────────
@@ -95,6 +121,23 @@ class _PlayerSelfViewScreenState extends State<PlayerSelfViewScreen> {
                     TextStyle(fontSize: 12, fontWeight: FontWeight.normal)),
           ],
         ),
+        actions: [
+          PopupMenuButton<String>(
+            onSelected: (value) async {
+              if (value == 'logout') await _performLogout();
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: 'logout',
+                child: Row(children: [
+                  Icon(Icons.logout, size: 20),
+                  SizedBox(width: 12),
+                  Text('Log Out'),
+                ]),
+              ),
+            ],
+          ),
+        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())

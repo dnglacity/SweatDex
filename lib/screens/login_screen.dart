@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import '../widgets/error_dialog.dart';
 
 // =============================================================================
 // login_screen.dart  (AOD v1.12 — BUG FIX: database connection error)
@@ -125,13 +126,7 @@ class _LoginScreenState extends State<LoginScreen> {
       debugPrint('LoginScreen _handleSubmit error: $e');
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(_getErrorMessage(e.toString())),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 5),
-          ),
-        );
+        showErrorDialog(context, _getErrorMessage(e.toString()));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);

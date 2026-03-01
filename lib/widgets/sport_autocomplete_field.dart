@@ -37,7 +37,7 @@ class SportAutocompleteField extends StatefulWidget {
   /// External controller that holds the current sport name text.
   final TextEditingController controller;
 
-  /// Full list of sports from the DB (id, name, category).
+  /// Full list of sports from the DB (id, name).
   final List<Map<String, dynamic>> sports;
 
   /// The currently selected sport_id — informational only; not mutated here.
@@ -129,7 +129,6 @@ class _SportAutocompleteFieldState extends State<SportAutocompleteField> {
                   final sport = options.elementAt(i);
                   return ListTile(
                     title: Text(sport['name'] as String),
-                    subtitle: Text(sport['category'] as String? ?? ''),
                     onTap: () => onOptionSelected(sport),
                   );
                 },

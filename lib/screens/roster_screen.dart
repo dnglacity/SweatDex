@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import '../models/player.dart';
 import '../services/player_service.dart';
 import '../services/auth_service.dart';
+import '../widgets/error_dialog.dart';
 import '../widgets/sport_autocomplete_field.dart'; // CHANGE: extracted widget
 import 'add_player_screen.dart';
 import 'manage_members_screen.dart';
 import 'saved_roster_screen.dart';
 import 'account_settings_screen.dart';
-import 'team_selection_screen.dart';
 
 // =============================================================================
 // roster_screen.dart  (AOD v1.7 — updated)
@@ -142,11 +142,7 @@ class _RosterScreenState extends State<RosterScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Error loading players: $e'),
-              backgroundColor: Colors.red),
-        );
+        showErrorDialog(context, e);
       }
     }
   }
@@ -182,11 +178,7 @@ class _RosterScreenState extends State<RosterScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Error updating status: $e'),
-              backgroundColor: Colors.red),
-        );
+        showErrorDialog(context, e);
       }
     }
   }
@@ -291,12 +283,7 @@ class _RosterScreenState extends State<RosterScreen> {
           );
         }
       } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text('Error: $e'), backgroundColor: Colors.red),
-          );
-        }
+        if (mounted) showErrorDialog(context, e);
       }
     }
   }
@@ -370,12 +357,7 @@ class _RosterScreenState extends State<RosterScreen> {
           );
         }
       } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text('Error: $e'), backgroundColor: Colors.red),
-          );
-        }
+        if (mounted) showErrorDialog(context, e);
         setState(() {
           _bulkDeleteMode = false;
           _selectedIds.clear();
@@ -401,6 +383,7 @@ class _RosterScreenState extends State<RosterScreen> {
     final formKey = GlobalKey<FormState>();
     bool submitted = false;
 
+    if (!mounted) return;
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -619,14 +602,11 @@ class _RosterScreenState extends State<RosterScreen> {
     try {
       _playerService.clearCache();
       await _authService.signOut();
-      // AuthWrapper's StreamBuilder handles routing to LoginScreen on signedOut event.
+      // Pop back to AuthWrapper so its StreamBuilder can render LoginScreen.
+      if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Error logging out: $e'),
-              backgroundColor: Colors.red),
-        );
+        showErrorDialog(context, e);
       }
     }
   }
@@ -691,12 +671,7 @@ class _RosterScreenState extends State<RosterScreen> {
           );
         }
       } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text('Error: $e'), backgroundColor: Colors.red),
-          );
-        }
+        if (mounted) showErrorDialog(context, e);
       }
     }
   }
@@ -951,25 +926,18 @@ class _RosterScreenState extends State<RosterScreen> {
                                       color: Colors.white, size: 32),
                                 ),
                                 onDismissed: (_) async {
+                                  final sm = ScaffoldMessenger.of(context);
                                   try {
                                     await _playerService
                                         .deletePlayer(player.id);
                                     _removeLocalPlayer(player.id);
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(SnackBar(
-                                        content: Text(
-                                            '${player.name} removed'),
-                                      ));
-                                    }
+                                    sm.showSnackBar(SnackBar(
+                                      content: Text(
+                                          '${player.name} removed'),
+                                    ));
                                   } catch (e) {
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(SnackBar(
-                                        content: Text('Error: $e'),
-                                        backgroundColor: Colors.red,
-                                      ));
-                                    }
+                                    // ignore: use_build_context_synchronously
+                                    if (mounted) showErrorDialog(context, e);
                                     setState(
                                         () => _players.insert(i, player));
                                   }

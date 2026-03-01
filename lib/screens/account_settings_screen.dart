@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/app_user.dart';
 import '../services/auth_service.dart';
 import '../services/player_service.dart';
+import '../widgets/error_dialog.dart';
 
 // =============================================================================
 // account_settings_screen.dart  (AOD v1.7 — updated)
@@ -131,12 +132,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error saving: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        showErrorDialog(context, e);
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -178,7 +174,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: Colors.blue.withOpacity(0.08),
+                      color: Colors.blue.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: const Text(
@@ -303,9 +299,9 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: Colors.red.withOpacity(0.08),
+                        color: Colors.red.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.red.withOpacity(0.4)),
+                        border: Border.all(color: Colors.red.withValues(alpha: 0.4)),
                       ),
                       child: Row(
                         children: [
@@ -621,7 +617,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                                       border: const OutlineInputBorder(),
                                       filled: true,
                                       fillColor:
-                                          Colors.grey.withOpacity(0.05),
+                                          Colors.grey.withValues(alpha: 0.05),
                                       // Lock icon reinforces read-only state.
                                       suffixIcon: const Icon(
                                           Icons.lock_outline,
@@ -746,7 +742,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
         prefixIcon: Icon(icon),
         border: const OutlineInputBorder(),
         filled: !enabled,
-        fillColor: enabled ? null : Colors.grey.withOpacity(0.05),
+        fillColor: enabled ? null : Colors.grey.withValues(alpha: 0.05),
         helperText: helperText,
       ),
       validator: validator,

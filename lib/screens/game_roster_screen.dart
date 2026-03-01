@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 // Standardised to relative import to match the rest of the codebase.
 import '../models/player.dart';
 import '../services/player_service.dart';
+import '../widgets/error_dialog.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // game_roster_screen.dart  (AOD v1.4)
@@ -434,11 +435,7 @@ class _GameRosterScreenState extends State<GameRosterScreen>
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text('Error saving: $e'),
-                backgroundColor: Colors.red),
-          );
+          showErrorDialog(context, e);
         }
       }
     } else {
@@ -1012,7 +1009,7 @@ class _StarterDropZone extends StatelessWidget {
       onWillAcceptWithDetails: (d) =>
           !starters.contains(d.data) && !isFull,
       onAcceptWithDetails: (d) => onDropPlayer(d.data),
-      builder: (_, candidateData, __) {
+      builder: (_, candidateData, _) {
         final isHovering = candidateData.isNotEmpty;
         return AnimatedContainer(
           duration: const Duration(milliseconds: 150),
@@ -1113,7 +1110,7 @@ class _SubsDropZone extends StatelessWidget {
     return DragTarget<Player>(
       onWillAcceptWithDetails: (d) => !substitutes.contains(d.data),
       onAcceptWithDetails: (d) => onDropPlayer(d.data),
-      builder: (_, candidateData, __) {
+      builder: (_, candidateData, _) {
         final isHovering = candidateData.isNotEmpty;
         return AnimatedContainer(
           duration: const Duration(milliseconds: 150),
