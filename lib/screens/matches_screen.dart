@@ -11,14 +11,18 @@ import 'match_view_screen.dart';
 
 class MatchesScreen extends StatelessWidget {
   final List<Match> matches;
+  final bool isCoach;
   final void Function(Match updated)? onMatchUpdated;
   final void Function(String matchId)? onMatchDeleted;
+  final void Function(Match added)? onMatchAdded;
 
   const MatchesScreen({
     super.key,
     this.matches = const [],
+    this.isCoach = false,
     this.onMatchUpdated,
     this.onMatchDeleted,
+    this.onMatchAdded,
   });
 
   static const _monthNames = [
@@ -78,7 +82,7 @@ class MatchesScreen extends StatelessWidget {
             onTap: () => Navigator.push<Match?>(
               context,
               MaterialPageRoute(
-                builder: (_) => MatchViewScreen(match: match),
+                builder: (_) => MatchViewScreen(match: match, isCoach: isCoach),
               ),
             ).then((result) {
               if (result == null) {

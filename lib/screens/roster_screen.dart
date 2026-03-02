@@ -873,6 +873,103 @@ class _RosterScreenState extends State<RosterScreen> {
     );
   }
 
+  // ── Join Match by Code ────────────────────────────────────────────────────
+
+  Future<void> _showJoinMatchDialog() async {
+    final codeController = TextEditingController();
+    String? errorMsg;
+    bool submitting = false;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          void submit() async {
+            final code = codeController.text.trim();
+            if (code.length != 6) {
+              setDialogState(() => errorMsg = 'Code must be 6 characters.');
+              return;
+            }
+            setDialogState(() {
+              submitting = true;
+              errorMsg = null;
+            });
+            final messenger = ScaffoldMessenger.of(context);
+            try {
+              final result = await _playerService.redeemMatchInvite(
+                  code, widget.teamId);
+              // Reload matches so the new row appears.
+              await _loadMatches();
+              if (ctx.mounted) {
+                Navigator.pop(ctx);
+                messenger.showSnackBar(SnackBar(
+                  content: Text(
+                      'Match vs. ${result['opponent_name']} added to your schedule!'),
+                ));
+              }
+            } catch (e) {
+              if (ctx.mounted) {
+                setDialogState(() {
+                  errorMsg = e.toString().replaceFirst('Exception: ', '');
+                  submitting = false;
+                });
+              }
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('Join Match by Code'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Enter the 6-character code shared by the opposing coach to add the match to your schedule.',
+                  style: TextStyle(fontSize: 13),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: codeController,
+                  autofocus: true,
+                  maxLength: 6,
+                  textCapitalization: TextCapitalization.characters,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => submitting ? null : submit(),
+                  decoration: const InputDecoration(
+                    labelText: 'Match Code',
+                    hintText: 'e.g. A1B2C3',
+                    border: OutlineInputBorder(),
+                    counterText: '',
+                  ),
+                ),
+                if (errorMsg != null) ...[
+                  const SizedBox(height: 8),
+                  Text(errorMsg!,
+                      style: const TextStyle(color: Colors.red, fontSize: 13)),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: submitting ? null : () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: submitting ? null : submit,
+                child: submitting
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Text('Add Match'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   // ── Overflow menu ─────────────────────────────────────────────────────────
 
   void _showOverflowMenu() async {
@@ -901,6 +998,15 @@ class _RosterScreenState extends State<RosterScreen> {
             Icon(Icons.person_add, size: 20),
             SizedBox(width: 12),
             Text('Invite to Team'),
+          ]),
+        ),
+      if (_isCoachOrOwner)
+        const PopupMenuItem(
+          value: 'joinMatchByCode',
+          child: Row(children: [
+            Icon(Icons.sports_score_outlined, size: 20),
+            SizedBox(width: 12),
+            Text('Join Match by Code'),
           ]),
         ),
       const PopupMenuDivider(),
@@ -964,6 +1070,9 @@ class _RosterScreenState extends State<RosterScreen> {
         break;
       case 'inviteToTeam':
         await _showInviteDialog();
+        break;
+      case 'joinMatchByCode':
+        await _showJoinMatchDialog();
         break;
       case 'deleteRoster':
         if (_isOwner) await _confirmDeleteRoster();
@@ -1140,7 +1249,9 @@ class _RosterScreenState extends State<RosterScreen> {
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _tabIndex,
-        onTap: (i) => setState(() => _tabIndex = i),
+        onTap: (i) => setState(() {
+          _tabIndex = i;
+        }),
         selectedItemColor: colorScheme.primary,
         unselectedItemColor: colorScheme.onSurface.withValues(alpha: 0.55),
         items: const [
@@ -1152,13 +1263,14 @@ class _RosterScreenState extends State<RosterScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.sports_outlined),
             activeIcon: Icon(Icons.sports),
-            label: 'Matches',
+            label: 'Events',
           ),
         ],
       ),
       body: _tabIndex == 1
           ? MatchesScreen(
               matches: _matches,
+              isCoach: _isCoachOrOwner,
               onMatchUpdated: (updated) {
                 setState(() {
                   final idx = _matches.indexWhere((m) => m.id == updated.id);
@@ -1167,6 +1279,9 @@ class _RosterScreenState extends State<RosterScreen> {
               },
               onMatchDeleted: (matchId) {
                 setState(() => _matches.removeWhere((m) => m.id == matchId));
+              },
+              onMatchAdded: (added) {
+                setState(() => _matches.add(added));
               },
             )
           : _isLoading
@@ -1546,10 +1661,24 @@ class _RosterScreenState extends State<RosterScreen> {
             ),
       floatingActionButton: _tabIndex == 1
           ? (_isCoachOrOwner
-              ? FloatingActionButton.extended(
-                  onPressed: () => _showCreateMatchSheet(),
-                  icon: const Icon(Icons.event),
-                  label: const Text('Create Event'),
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    FloatingActionButton.extended(
+                      heroTag: 'fab_use_code',
+                      onPressed: _showJoinMatchDialog,
+                      icon: const Icon(Icons.qr_code_scanner),
+                      label: const Text('Use Code'),
+                    ),
+                    const SizedBox(height: 10),
+                    FloatingActionButton.extended(
+                      heroTag: 'fab_new_event',
+                      onPressed: _showCreateMatchSheet,
+                      icon: const Icon(Icons.event),
+                      label: const Text('New Event'),
+                    ),
+                  ],
                 )
               : null)
           : (_bulkDeleteMode

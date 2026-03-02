@@ -1,20 +1,52 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/match.dart';
 import '../services/player_service.dart';
+import 'game_roster_screen.dart';
 
 // =============================================================================
-// match_view_screen.dart  (AOD v1.12)
+// match_view_screen.dart  (AOD v1.13)
 //
 // Full-screen view for a single match. Opened when the user taps a match card
-// in MatchesScreen. The top-right overflow menu includes "Match Settings".
+// in MatchesScreen. The top-right overflow menu includes "Match Settings" and,
+// for coaches/owners, "Create Invite" to share a 6-character match invite code.
+// A clipboard icon (coaches only) opens the Select Roster picker.
 // =============================================================================
 
-enum _MatchMenuItem { settings }
+enum _MatchMenuItem { settings, createInvite }
+
+/// Lightweight roster entry used by the Select Roster picker.
+class _RosterEntry {
+  final String id;
+  final String title;
+  final String? gameDate;
+  final int starterSlots;
+
+  const _RosterEntry({
+    required this.id,
+    required this.title,
+    this.gameDate,
+    required this.starterSlots,
+  });
+
+  factory _RosterEntry.fromMap(Map<String, dynamic> m) => _RosterEntry(
+        id: m['id'] as String,
+        title: m['title'] as String,
+        gameDate: m['game_date'] as String?,
+        starterSlots: (m['starter_slots'] as int?) ?? 5,
+      );
+}
 
 class MatchViewScreen extends StatefulWidget {
   final Match match;
+  final bool isCoach;
 
-  const MatchViewScreen({super.key, required this.match});
+  const MatchViewScreen({
+    super.key,
+    required this.match,
+    this.isCoach = false,
+  });
 
   @override
   State<MatchViewScreen> createState() => _MatchViewScreenState();
@@ -22,6 +54,7 @@ class MatchViewScreen extends StatefulWidget {
 
 class _MatchViewScreenState extends State<MatchViewScreen> {
   late Match _match;
+  String? _selectedRosterName;
 
   static const _monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -56,14 +89,22 @@ class _MatchViewScreenState extends State<MatchViewScreen> {
             onPressed: () => Navigator.of(context).pop(_match),
           ),
           actions: [
+            if (widget.isCoach)
+              IconButton(
+                icon: const Icon(Icons.assignment_outlined),
+                tooltip: 'Select Roster',
+                onPressed: () => _showSelectRosterSheet(context),
+              ),
             PopupMenuButton<_MatchMenuItem>(
               onSelected: (item) {
                 if (item == _MatchMenuItem.settings) {
                   _showMatchSettings(context);
+                } else if (item == _MatchMenuItem.createInvite) {
+                  _showMatchInviteDialog(context);
                 }
               },
-              itemBuilder: (_) => const [
-                PopupMenuItem(
+              itemBuilder: (_) => [
+                const PopupMenuItem(
                   value: _MatchMenuItem.settings,
                   child: Row(
                     children: [
@@ -73,6 +114,17 @@ class _MatchViewScreenState extends State<MatchViewScreen> {
                     ],
                   ),
                 ),
+                if (widget.isCoach)
+                  const PopupMenuItem(
+                    value: _MatchMenuItem.createInvite,
+                    child: Row(
+                      children: [
+                        Icon(Icons.share_outlined),
+                        SizedBox(width: 12),
+                        Text('Create Invite'),
+                      ],
+                    ),
+                  ),
               ],
             ),
           ],
@@ -101,11 +153,13 @@ class _MatchViewScreenState extends State<MatchViewScreen> {
 
             // ── Teams ────────────────────────────────────────────────────────────
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
                   child: _TeamBlock(
                     label: 'My Team',
                     name: _match.myTeamName,
+                    rosterLabel: _selectedRosterName,
                     cs: cs,
                     tt: tt,
                   ),
@@ -124,6 +178,7 @@ class _MatchViewScreenState extends State<MatchViewScreen> {
                   child: _TeamBlock(
                     label: 'Opponent',
                     name: _match.opponentName,
+                    // Future: pass opponent's selected roster name here.
                     cs: cs,
                     tt: tt,
                   ),
@@ -177,6 +232,185 @@ class _MatchViewScreenState extends State<MatchViewScreen> {
             ],
           ],
         ),
+    );
+  }
+
+  // ── Select Roster ────────────────────────────────────────────────────────
+
+  Future<void> _showSelectRosterSheet(BuildContext context) async {
+    final name = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _SelectRosterSheet(
+        teamId: _match.teamId,
+        teamName: _match.myTeamName,
+      ),
+    );
+    if (mounted) setState(() => _selectedRosterName = name ?? _selectedRosterName);
+  }
+
+  // ── Match Invite ─────────────────────────────────────────────────────────
+
+  void _showMatchInviteDialog(BuildContext context) {
+    String? code;
+    DateTime? expiresAt;
+    String? errorMsg;
+    bool loading = true;
+    bool revoking = false;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            if (loading && code == null && errorMsg == null) {
+              PlayerService()
+                  .getOrCreateMatchInvite(_match.id)
+                  .then((data) {
+                if (!ctx.mounted) return;
+                setDialogState(() {
+                  code = data['code'] as String;
+                  expiresAt = data['expires_at'] as DateTime;
+                  loading = false;
+                });
+              }).catchError((e) {
+                if (!ctx.mounted) return;
+                setDialogState(() {
+                  errorMsg = e.toString().replaceFirst('Exception: ', '');
+                  loading = false;
+                });
+              });
+            }
+
+            String formatExpiry(DateTime dt) {
+              final diff = dt.difference(DateTime.now());
+              if (diff.inMinutes < 1) return 'Expiring soon';
+              if (diff.inHours < 1) return 'Expires in ${diff.inMinutes}m';
+              return 'Expires in ${diff.inHours}h ${diff.inMinutes.remainder(60)}m';
+            }
+
+            return AlertDialog(
+              title: const Text('Match Invite Code'),
+              content: SizedBox(
+                width: 280,
+                child: loading
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 24),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    : errorMsg != null
+                        ? Text(errorMsg!,
+                            style: const TextStyle(color: Colors.red))
+                        : Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text(
+                                'Share this code with the opposing coach or owner so they can add this match to their schedule.',
+                                style: TextStyle(fontSize: 13),
+                              ),
+                              const SizedBox(height: 20),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 24, vertical: 14),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF1A3A6B),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  code!,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 32,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 8,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                formatExpiry(expiresAt!),
+                                style: TextStyle(
+                                    fontSize: 12, color: Colors.grey[600]),
+                              ),
+                              const SizedBox(height: 20),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  icon: const Icon(Icons.copy, size: 18),
+                                  label: const Text('Copy Code'),
+                                  onPressed: () {
+                                    Clipboard.setData(
+                                        ClipboardData(text: code!));
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                          content: Text(
+                                              'Match invite code copied!')),
+                                    );
+                                  },
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  icon: revoking
+                                      ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2))
+                                      : const Icon(Icons.block, size: 18),
+                                  label: Text(
+                                      revoking ? 'Ending...' : 'End Invite'),
+                                  style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.red),
+                                  onPressed: revoking
+                                      ? null
+                                      : () async {
+                                          setDialogState(
+                                              () => revoking = true);
+                                          final messenger =
+                                              ScaffoldMessenger.of(context);
+                                          try {
+                                            await PlayerService()
+                                                .revokeMatchInvite(_match.id);
+                                            if (ctx.mounted) {
+                                              Navigator.of(ctx).pop();
+                                              messenger.showSnackBar(
+                                                const SnackBar(
+                                                    content: Text(
+                                                        'Match invite ended.')),
+                                              );
+                                            }
+                                          } catch (e) {
+                                            setDialogState(() {
+                                              errorMsg = e
+                                                  .toString()
+                                                  .replaceFirst(
+                                                      'Exception: ', '');
+                                              revoking = false;
+                                            });
+                                          }
+                                        },
+                                ),
+                              ),
+                            ],
+                          ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
@@ -441,12 +675,14 @@ class _MatchViewScreenState extends State<MatchViewScreen> {
 class _TeamBlock extends StatelessWidget {
   final String label;
   final String name;
+  final String? rosterLabel;
   final ColorScheme cs;
   final TextTheme tt;
 
   const _TeamBlock({
     required this.label,
     required this.name,
+    this.rosterLabel,
     required this.cs,
     required this.tt,
   });
@@ -472,6 +708,30 @@ class _TeamBlock extends StatelessWidget {
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),
+        if (rosterLabel != null) ...[
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.assignment_outlined,
+                  size: 12, color: cs.onSurface.withValues(alpha: 0.45)),
+              const SizedBox(width: 3),
+              Flexible(
+                child: Text(
+                  rosterLabel!,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: tt.bodySmall?.copyWith(
+                    color: cs.onSurface.withValues(alpha: 0.55),
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }
@@ -517,6 +777,338 @@ class _InfoRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ── Select Roster Sheet ───────────────────────────────────────────────────────
+//
+// Shows the team's game rosters via a Realtime stream.  The user taps a roster
+// to select it (green check), can tap "+" to create a new one, and taps
+// "Confirm" to close with the selection.
+
+class _SelectRosterSheet extends StatefulWidget {
+  final String teamId;
+  final String teamName;
+
+  const _SelectRosterSheet({
+    required this.teamId,
+    required this.teamName,
+  });
+
+  @override
+  State<_SelectRosterSheet> createState() => _SelectRosterSheetState();
+}
+
+class _SelectRosterSheetState extends State<_SelectRosterSheet> {
+  final _service = PlayerService();
+
+  List<_RosterEntry> _rosters = [];
+  bool _loading = true;
+  String? _selectedId;
+
+  StreamSubscription<List<Map<String, dynamic>>>? _sub;
+
+  @override
+  void initState() {
+    super.initState();
+    _sub = _service.getGameRosterStream(widget.teamId).listen(
+      (rows) {
+        if (mounted) {
+          setState(() {
+            _rosters = rows.map(_RosterEntry.fromMap).toList();
+            _loading = false;
+          });
+        }
+      },
+      onError: (_) {
+        if (mounted) setState(() => _loading = false);
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  // ── Create new roster ─────────────────────────────────────────────────────
+
+  Future<void> _showCreateDialog() async {
+    final titleCtrl = TextEditingController(text: '${widget.teamName} vs. ');
+    final starterCtrl = TextEditingController(text: '5');
+    final formKey = GlobalKey<FormState>();
+    bool submitted = false;
+    int starterSlots = 5;
+
+    final result = await showDialog<({String title, int starterSlots})>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) {
+          return AlertDialog(
+            title: const Text('New Game Roster'),
+            content: Form(
+              key: formKey,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextFormField(
+                      controller: titleCtrl,
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Roster Title *',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.assignment),
+                      ),
+                      validator: (v) =>
+                          (v == null || v.trim().isEmpty) ? 'Required' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    Text('Starting Roster Size',
+                        style: Theme.of(ctx).textTheme.labelLarge),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.remove_circle_outline),
+                          onPressed: starterSlots > 1
+                              ? () => setLocal(() {
+                                    starterSlots--;
+                                    starterCtrl.text = '$starterSlots';
+                                  })
+                              : null,
+                        ),
+                        Expanded(
+                          child: TextFormField(
+                            controller: starterCtrl,
+                            textAlign: TextAlign.center,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              border: OutlineInputBorder(),
+                              contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 12),
+                            ),
+                            onChanged: (v) {
+                              final p = int.tryParse(v);
+                              if (p != null && p >= 1 && p <= 50) {
+                                setLocal(() => starterSlots = p);
+                              }
+                            },
+                            validator: (v) {
+                              final p = int.tryParse(v ?? '');
+                              return (p == null || p < 1 || p > 50)
+                                  ? '1–50'
+                                  : null;
+                            },
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.add_circle_outline),
+                          onPressed: starterSlots < 50
+                              ? () => setLocal(() {
+                                    starterSlots++;
+                                    starterCtrl.text = '$starterSlots';
+                                  })
+                              : null,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  if (!submitted && formKey.currentState!.validate()) {
+                    submitted = true;
+                    Navigator.pop(ctx, (
+                      title: titleCtrl.text.trim(),
+                      starterSlots:
+                          (int.tryParse(starterCtrl.text) ?? 5).clamp(1, 50),
+                    ));
+                  }
+                },
+                child: const Text('Create'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      titleCtrl.dispose();
+      starterCtrl.dispose();
+    });
+
+    if (result != null && mounted) {
+      try {
+        final newId = await _service.createGameRoster(
+          teamId: widget.teamId,
+          title: result.title,
+          gameDate: null,
+          starterSlots: result.starterSlots,
+        );
+        // Open the new roster immediately.
+        if (mounted) {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => GameRosterScreen(
+                teamId: widget.teamId,
+                teamName: widget.teamName,
+                rosterTitle: result.title,
+                gameDate: null,
+                starterSlots: result.starterSlots,
+                rosterId: newId,
+                onCancel: null,
+              ),
+            ),
+          );
+          // Auto-select the newly created roster.
+          if (mounted) setState(() => _selectedId = newId);
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text('$e')));
+        }
+      }
+    }
+  }
+
+  // ── Build ─────────────────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.6,
+      minChildSize: 0.4,
+      maxChildSize: 0.92,
+      builder: (ctx, scrollCtrl) {
+        return Column(
+          children: [
+            // ── Handle ──────────────────────────────────────────────────────
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: cs.onSurface.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+
+            // ── Header row ──────────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Select Roster',
+                      style: tt.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.add_circle_outline),
+                    tooltip: 'New Game Roster',
+                    onPressed: _showCreateDialog,
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+
+            // ── Roster list ─────────────────────────────────────────────────
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _rosters.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.assignment,
+                                  size: 56, color: Colors.grey[400]),
+                              const SizedBox(height: 12),
+                              const Text('No game rosters yet'),
+                              const SizedBox(height: 8),
+                              TextButton.icon(
+                                icon: const Icon(Icons.add),
+                                label: const Text('Create one'),
+                                onPressed: _showCreateDialog,
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.builder(
+                          controller: scrollCtrl,
+                          itemCount: _rosters.length,
+                          itemBuilder: (_, i) {
+                            final r = _rosters[i];
+                            final selected = r.id == _selectedId;
+                            return ListTile(
+                              leading: CircleAvatar(
+                                backgroundColor: cs.primaryContainer,
+                                child: Icon(Icons.assignment,
+                                    color: cs.primary),
+                              ),
+                              title: Text(r.title,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold)),
+                              subtitle: Text(r.gameDate != null
+                                  ? '${r.gameDate} • ${r.starterSlots} starters'
+                                  : '${r.starterSlots} starters'),
+                              trailing: selected
+                                  ? const Icon(Icons.check_circle,
+                                      color: Colors.green)
+                                  : null,
+                              onTap: () => setState(
+                                  () => _selectedId = selected ? null : r.id),
+                            );
+                          },
+                        ),
+            ),
+
+            // ── Confirm button ──────────────────────────────────────────────
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton(
+                    onPressed: () {
+                      final name = _selectedId == null
+                          ? null
+                          : _rosters
+                              .firstWhere((r) => r.id == _selectedId)
+                              .title;
+                      Navigator.of(context).pop(name);
+                    },
+                    child: const Text('Confirm'),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

@@ -997,4 +997,59 @@ class PlayerService {
       _dbError(e, 'Error deleting match.');
     }
   }
+
+  // ===========================================================================
+  // MATCH INVITES
+  // ===========================================================================
+
+  /// Returns the active invite code for [matchId], creating one if needed.
+  /// Caller must be a coach/owner/manager of the match's team.
+  /// Returns a map with keys `code` (String) and `expires_at` (DateTime).
+  Future<Map<String, dynamic>> getOrCreateMatchInvite(String matchId) async {
+    try {
+      final result = await _supabase
+          .rpc('get_or_create_match_invite', params: {'p_match_id': matchId});
+      final row = (result as List).first as Map<String, dynamic>;
+      return {
+        'code': row['code'] as String,
+        'expires_at': DateTime.parse(row['expires_at'] as String).toLocal(),
+      };
+    } catch (e) {
+      _dbError(e, 'Error fetching match invite.');
+    }
+  }
+
+  /// Deactivates all active invite codes for [matchId].
+  Future<void> revokeMatchInvite(String matchId) async {
+    try {
+      await _supabase
+          .rpc('revoke_match_invite', params: {'p_match_id': matchId});
+    } catch (e) {
+      _dbError(e, 'Error revoking match invite.');
+    }
+  }
+
+  /// Redeems a 6-character match invite [code] and adds the match to [teamId].
+  /// Returns a map with keys `match_id`, `opponent_name`, `match_date`.
+  /// Throws a user-readable exception on invalid/expired codes or duplicates.
+  Future<Map<String, dynamic>> redeemMatchInvite(
+      String code, String teamId) async {
+    try {
+      final result = await _supabase.rpc('redeem_match_invite',
+          params: {'p_code': code.trim().toUpperCase(), 'p_team_id': teamId});
+      final row = (result as List).first as Map<String, dynamic>;
+      return {
+        'match_id': (row['out_match_id'] ?? row['match_id']) as String,
+        'opponent_name':
+            (row['out_opponent_name'] ?? row['opponent_name']) as String,
+        'match_date':
+            DateTime.parse((row['out_match_date'] ?? row['match_date']) as String)
+                .toLocal(),
+      };
+    } catch (e) {
+      final msg = e.toString();
+      final match = RegExp(r'message: (.+?)(?:,|\})').firstMatch(msg);
+      throw Exception(match?.group(1) ?? 'Error redeeming match code.');
+    }
+  }
 }

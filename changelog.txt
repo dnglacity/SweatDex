@@ -1,3 +1,22 @@
+v1.14 03.01.2026 Add Select Roster picker to match view
+- Added: screens/match_view_screen.dart — clipboard icon button (coaches only) in AppBar left of menu opens a Select Roster bottom sheet; sheet streams the team's game rosters in real time, allows single selection with a green checkmark, includes a + button to create a new roster inline (opens GameRosterScreen immediately), and returns the selected roster title on Confirm
+- Added: screens/match_view_screen.dart — _RosterEntry local model and _SelectRosterSheet StatefulWidget to support the picker
+- Changed: screens/match_view_screen.dart — _TeamBlock now accepts optional rosterLabel; confirmed roster name displays under My Team name in the versus area with a small clipboard icon; Opponent side reserved for future roster display
+
+v1.14 03.01.2026 Rename Matches tab to Events and expand Add Event FAB
+- Changed: screens/roster_screen.dart — bottom nav label "Matches" renamed to "Events"
+- Changed: screens/roster_screen.dart — replaced single "Create Event" FAB with an expandable "Add Event" FAB; tapping reveals two sub-buttons: "Use Code" (opens join-by-code dialog) and "New Event" (opens create event sheet); FAB collapses on selection or tab switch
+
+v1.14 03.01.2026 Fix ambiguous code column in get_or_create_match_invite RPC
+- Fixed: Supabase_script.md — get_or_create_match_invite now uses table alias (mi.code) in the uniqueness loop to resolve PostgreSQL error 42702 ("column reference code is ambiguous") caused by the RETURNS TABLE output column also named "code"
+
+v1.13 03.01.2026 Add match invite code system
+- Added: Supabase_script.md — SQL for public.match_invites table with RLS and three SECURITY DEFINER RPCs: get_or_create_match_invite, revoke_match_invite, redeem_match_invite; codes are single-use and deactivated immediately upon redemption
+- Added: services/player_service.dart — getOrCreateMatchInvite, revokeMatchInvite, redeemMatchInvite service methods
+- Added: screens/match_view_screen.dart — "Create Invite" popup menu item (coaches/owners only); _showMatchInviteDialog displays a 6-char code with Copy and End Invite actions; added isCoach parameter
+- Changed: screens/matches_screen.dart — added isCoach and onMatchAdded parameters; passes isCoach to MatchViewScreen
+- Changed: screens/roster_screen.dart — passes isCoach and onMatchAdded to MatchesScreen; added "Join Match by Code" overflow menu item (coaches/owners only) and _showJoinMatchDialog for redeeming a match invite code
+
 v1.12 03.01.2026 Fix matches not persisting across sessions
 - Fixed: screens/roster_screen.dart — _showCreateMatchSheet now calls _playerService.createMatch() to persist to Supabase and uses the returned UUID as the match ID (was using a fake local timestamp ID)
 - Added: screens/roster_screen.dart — _loadMatches() method that fetches existing matches from Supabase on initState so the Matches tab is populated when returning to the screen
