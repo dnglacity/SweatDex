@@ -61,12 +61,44 @@ class _MatchViewScreenState extends State<MatchViewScreen> {
   String? _selectedRosterId;
   String? _selectedRosterName;
 
+  // Roster preview data loaded when a roster is selected.
+  List<Map<String, dynamic>> _rosterStarters = [];
+  List<Map<String, dynamic>> _rosterSubs = [];
+  bool _rosterPreviewLoading = false;
+
   @override
   void initState() {
     super.initState();
     _match = widget.match;
     _selectedRosterId = widget.match.selectedRosterId;
     _selectedRosterName = widget.match.selectedRosterName;
+    if (_selectedRosterId != null) _loadRosterPreview(_selectedRosterId!);
+  }
+
+  Future<void> _loadRosterPreview(String rosterId) async {
+    if (!mounted) return;
+    setState(() => _rosterPreviewLoading = true);
+    try {
+      final data = await PlayerService().getGameRosterById(rosterId);
+      if (!mounted) return;
+      if (data != null) {
+        final starters = (data['starters'] as List<dynamic>? ?? [])
+            .cast<Map<String, dynamic>>();
+        final subs = (data['substitutes'] as List<dynamic>? ?? [])
+            .cast<Map<String, dynamic>>();
+        setState(() {
+          _rosterStarters = starters;
+          _rosterSubs = subs;
+          // Populate roster name from DB if not already set.
+          _selectedRosterName ??= data['title'] as String?;
+          _rosterPreviewLoading = false;
+        });
+      } else {
+        setState(() => _rosterPreviewLoading = false);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _rosterPreviewLoading = false);
+    }
   }
 
   @override
@@ -209,6 +241,17 @@ class _MatchViewScreenState extends State<MatchViewScreen> {
             const Divider(),
             const SizedBox(height: 16),
 
+            // ── Selected Roster Preview ───────────────────────────────────────
+            if (_selectedRosterId != null)
+              _RosterPreviewPanel(
+                rosterName: _selectedRosterName ?? 'Selected Roster',
+                starters: _rosterStarters,
+                subs: _rosterSubs,
+                loading: _rosterPreviewLoading,
+                isCoach: widget.isCoach,
+                onViewRoster: () => _openRosterInEditor(),
+              ),
+
             // ── Notes ────────────────────────────────────────────────────────────
             if (_match.notes.isNotEmpty) ...[
               const SizedBox(height: 24),
@@ -297,7 +340,38 @@ class _MatchViewScreenState extends State<MatchViewScreen> {
           selectedRosterName: result.name,
         );
       });
+      // Persist selection to DB.
+      await PlayerService().updateMatch(
+        matchId: _match.id,
+        selectedRosterId: result.id,
+      );
+      // Load the roster preview panel.
+      await _loadRosterPreview(result.id);
     }
+  }
+
+  // ── Open selected roster in editor ──────────────────────────────────────
+
+  Future<void> _openRosterInEditor() async {
+    if (_selectedRosterId == null) return;
+    final data = await PlayerService().getGameRosterById(_selectedRosterId!);
+    if (!mounted || data == null) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GameRosterScreen(
+          teamId: _match.teamId,
+          teamName: _match.myTeamName,
+          rosterTitle: data['title'] as String,
+          gameDate: data['game_date'] as String?,
+          starterSlots: (data['starter_slots'] as int?) ?? 5,
+          rosterId: _selectedRosterId!,
+          onCancel: null,
+        ),
+      ),
+    );
+    // Reload preview after returning from editor.
+    if (mounted) _loadRosterPreview(_selectedRosterId!);
   }
 
   // ── Match Invite ─────────────────────────────────────────────────────────
@@ -824,6 +898,159 @@ class _InfoRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ── Roster Preview Panel ──────────────────────────────────────────────────────
+//
+// Inline read-only roster summary displayed below the Teams section whenever
+// a game roster has been selected for the match.
+
+class _RosterPreviewPanel extends StatelessWidget {
+  final String rosterName;
+  final List<Map<String, dynamic>> starters;
+  final List<Map<String, dynamic>> subs;
+  final bool loading;
+  final bool isCoach;
+  final VoidCallback onViewRoster;
+
+  const _RosterPreviewPanel({
+    required this.rosterName,
+    required this.starters,
+    required this.subs,
+    required this.loading,
+    required this.isCoach,
+    required this.onViewRoster,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // ── Header ──────────────────────────────────────────────────────────
+        Row(
+          children: [
+            Icon(Icons.assignment_outlined, size: 16, color: cs.primary),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                rosterName,
+                style: tt.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: cs.onSurface,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (isCoach)
+              TextButton.icon(
+                icon: const Icon(Icons.open_in_new, size: 14),
+                label: const Text('View / Edit'),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+                onPressed: onViewRoster,
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+
+        if (loading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          )
+        else if (starters.isEmpty && subs.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Text(
+              'No players assigned yet.',
+              style: tt.bodySmall?.copyWith(
+                  color: cs.onSurface.withValues(alpha: 0.5),
+                  fontStyle: FontStyle.italic),
+            ),
+          )
+        else ...[
+          // ── Starters ──────────────────────────────────────────────────────
+          if (starters.isNotEmpty) ...[
+            Text(
+              'Starters (${starters.length})',
+              style: tt.labelSmall?.copyWith(
+                color: cs.onSurface.withValues(alpha: 0.55),
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.6,
+              ),
+            ),
+            const SizedBox(height: 4),
+            ...starters.map((p) => _PlayerRow(player: p, cs: cs, tt: tt)),
+          ],
+          // ── Substitutes ───────────────────────────────────────────────────
+          if (subs.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Substitutes (${subs.length})',
+              style: tt.labelSmall?.copyWith(
+                color: cs.onSurface.withValues(alpha: 0.55),
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.6,
+              ),
+            ),
+            const SizedBox(height: 4),
+            ...subs.map((p) => _PlayerRow(player: p, cs: cs, tt: tt)),
+          ],
+        ],
+        const SizedBox(height: 16),
+        const Divider(),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+}
+
+class _PlayerRow extends StatelessWidget {
+  final Map<String, dynamic> player;
+  final ColorScheme cs;
+  final TextTheme tt;
+
+  const _PlayerRow({
+    required this.player,
+    required this.cs,
+    required this.tt,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final name = player['name'] as String? ?? '—';
+    final position =
+        (player['position_override'] as String?)?.isNotEmpty == true
+            ? player['position_override'] as String
+            : player['position'] as String? ?? '';
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Icon(Icons.person_outline,
+              size: 14, color: cs.onSurface.withValues(alpha: 0.4)),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(name, style: tt.bodyMedium),
+          ),
+          if (position.isNotEmpty)
+            Text(
+              position,
+              style: tt.bodySmall?.copyWith(
+                color: cs.onSurface.withValues(alpha: 0.5),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

@@ -1,3 +1,15 @@
+v1.21 03.02.2026 MatchView: inline roster preview + persist selected roster to DB
+- Added: selected_roster_id column to matches table (see Supabase_script.md for migration)
+- Changed: Match.fromMap() now reads selected_roster_id from DB; comment updated to reflect field is persisted
+- Changed: PlayerService.updateMatch() accepts optional selectedRosterId parameter (uses sentinel so null can be passed to clear)
+- Changed: getMatches() select query includes selected_roster_id column
+- Added: _RosterPreviewPanel widget in match_view_screen.dart — shows starters and subs list inline below the My Team vs Opponent section when a roster is selected
+- Added: _PlayerRow helper widget for player name + position display in the preview panel
+- Added: _loadRosterPreview() in _MatchViewScreenState — fetches roster data via getGameRosterById on init and after selection
+- Added: _openRosterInEditor() in _MatchViewScreenState — opens selected roster in GameRosterScreen and reloads preview on return
+- Changed: _showSelectRosterSheet now persists selection to DB via updateMatch and loads the roster preview after confirming
+- Changed: initState loads roster preview if match already has a selected_roster_id
+
 v1.20 03.02.2026 Fix: format slot assignments now persist across roster sessions
 - Fixed: format-template position assignments (player-to-slot) were not saved when hitting Save on the Roster tab; they now persist and restore correctly when reopening a saved roster
 - Added: format_slots jsonb column to game_rosters table (see Supabase_script.md for migration)

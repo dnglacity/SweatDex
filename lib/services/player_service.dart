@@ -960,7 +960,7 @@ class PlayerService {
     try {
       final response = await _supabase
           .from('matches')
-          .select('id, team_id, my_team_name, opponent_name, match_date, is_home, notes, created_at')
+          .select('id, team_id, my_team_name, opponent_name, match_date, is_home, notes, created_at, selected_roster_id')
           .eq('team_id', teamId)
           .order('match_date', ascending: true);
       return (response as List<dynamic>).cast<Map<String, dynamic>>();
@@ -998,6 +998,9 @@ class PlayerService {
   }
 
   /// Updates mutable fields on an existing match row.
+  /// Sentinel used so callers can explicitly set selectedRosterId to null.
+  static const Object _rosterSentinel = Object();
+
   Future<void> updateMatch({
     required String matchId,
     String? myTeamName,
@@ -1005,6 +1008,8 @@ class PlayerService {
     DateTime? matchDate,
     bool? isHome,
     String? notes,
+    // Pass a String to set, pass null to clear, omit to leave unchanged.
+    Object? selectedRosterId = _rosterSentinel,
   }) async {
     try {
       final updates = <String, dynamic>{
@@ -1013,6 +1018,8 @@ class PlayerService {
         if (matchDate != null) 'match_date': matchDate.toUtc().toIso8601String(),
         if (isHome != null) 'is_home': isHome,
         if (notes != null) 'notes': notes,
+        if (!identical(selectedRosterId, _rosterSentinel))
+          'selected_roster_id': selectedRosterId as String?,
       };
       if (updates.isEmpty) return;
       await _supabase.from('matches').update(updates).eq('id', matchId);

@@ -1,5 +1,5 @@
 // =============================================================================
-// match.dart  (AOD v1.12)
+// match.dart  (AOD v1.14)
 //
 // Match model — persisted to public.matches in Supabase.
 // Fields mirror the DB columns defined in supabase_script.md.
@@ -14,7 +14,8 @@ class Match {
   final bool isHome; // true = Home, false = Away
   final String notes;
   final DateTime? createdAt;
-  // In-memory only — not persisted to DB.
+  // selectedRosterId is persisted to matches.selected_roster_id;
+  // selectedRosterName is in-memory only (derived from the roster title).
   final String? selectedRosterId;
   final String? selectedRosterName;
 
@@ -45,6 +46,7 @@ class Match {
         createdAt: m['created_at'] != null
             ? DateTime.parse(m['created_at'] as String).toLocal()
             : null,
+        selectedRosterId: m['selected_roster_id'] as String?,
       );
 
   Map<String, dynamic> toMap() => {
