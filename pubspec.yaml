@@ -22,6 +22,12 @@ dependencies:
   # Uses platform secure storage (Keychain/Keystore) to protect PII at rest.
   flutter_secure_storage: ^9.2.2
 
+  # CSV parsing for roster import.
+  csv: ^6.0.0
+
+  # Cross-platform file picker (used for CSV import).
+  file_picker: ^8.0.0+1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

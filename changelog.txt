@@ -1,3 +1,13 @@
+[v1.22] 03.03.2026 2026 CSV roster import
+
+- Added: CsvImportScreen (lib/screens/csv_import_screen.dart) — coaches can upload a .csv file to bulk-populate their team roster
+- Added: Template CSV download (copies template to clipboard on mobile/web; includes all supported columns with example rows)
+- Added: CSV preview table with per-row validation — invalid rows (missing first_name or last_name) are highlighted and skipped on import
+- Added: Summary banner showing how many rows are ready vs have errors before importing
+- Added: bulkAddPlayers(List<Player>) method in PlayerService — inserts rows one at a time and aggregates errors without aborting the entire batch
+- Added: file_picker ^8.0.0+1 and csv ^6.0.0 packages to pubspec.yaml
+- Changed: RosterScreen overflow menu — new "Import Roster from CSV" item (coach/owner only) navigates to CsvImportScreen and refreshes the roster on success
+
 v1.22 03.03.2026 MatchView: live checkmark updates via broadcast channel
 
 - Added: Supabase Realtime broadcast channel (match-events-{TeamA_match_id}) for cross-team real-time signaling, bypassing RLS restrictions on postgres-changes

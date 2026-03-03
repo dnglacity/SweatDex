@@ -343,6 +343,27 @@ class PlayerService {
     }
   }
 
+  /// Batch-inserts [players] and returns the number successfully inserted.
+  /// Rows are inserted one at a time so a single bad row doesn't abort the
+  /// entire batch; errors are collected and re-thrown as a summary string.
+  Future<int> bulkAddPlayers(List<Player> players) async {
+    if (players.isEmpty) return 0;
+    int inserted = 0;
+    final errors = <String>[];
+    for (final player in players) {
+      try {
+        await _supabase.from('players').insert(player.toMap());
+        inserted++;
+      } catch (e) {
+        errors.add('${player.firstName} ${player.lastName}: $e');
+      }
+    }
+    if (errors.isNotEmpty) {
+      throw Exception('${errors.length} row(s) failed:\n${errors.join('\n')}');
+    }
+    return inserted;
+  }
+
   /// Deletes a player and scrubs their entries from all historical game
   /// rosters via the delete_player SECURITY DEFINER RPC.
   Future<void> deletePlayer(String id) async {

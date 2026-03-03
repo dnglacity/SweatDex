@@ -13,6 +13,7 @@ import 'saved_roster_screen.dart';
 import 'account_settings_screen.dart';
 import 'matches_screen.dart';
 import '../models/match.dart';
+import 'csv_import_screen.dart';
 
 // =============================================================================
 // roster_screen.dart  (AOD v1.7 — updated)
@@ -978,6 +979,15 @@ class _RosterScreenState extends State<RosterScreen> {
             Text('Join Match by Code'),
           ]),
         ),
+      if (_isCoachOrOwner)
+        const PopupMenuItem(
+          value: 'importCsv',
+          child: Row(children: [
+            Icon(Icons.upload_file, size: 20),
+            SizedBox(width: 12),
+            Text('Import Roster from CSV'),
+          ]),
+        ),
       const PopupMenuDivider(),
       if (_isOwner)
         const PopupMenuItem(
@@ -1042,6 +1052,15 @@ class _RosterScreenState extends State<RosterScreen> {
         break;
       case 'joinMatchByCode':
         await _showJoinMatchDialog();
+        break;
+      case 'importCsv':
+        final imported = await Navigator.push<bool>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => CsvImportScreen(teamId: widget.teamId),
+          ),
+        );
+        if (imported == true && mounted) _loadFirstPage();
         break;
       case 'deleteRoster':
         if (_isOwner) await _confirmDeleteRoster();
