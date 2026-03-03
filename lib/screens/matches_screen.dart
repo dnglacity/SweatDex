@@ -13,6 +13,7 @@ import 'match_view_screen.dart';
 class MatchesScreen extends StatelessWidget {
   final List<Match> matches;
   final bool isCoach;
+  final String? currentTeamId;
   final void Function(Match updated)? onMatchUpdated;
   final void Function(String matchId)? onMatchDeleted;
   final void Function(Match added)? onMatchAdded;
@@ -21,6 +22,7 @@ class MatchesScreen extends StatelessWidget {
     super.key,
     this.matches = const [],
     this.isCoach = false,
+    this.currentTeamId,
     this.onMatchUpdated,
     this.onMatchDeleted,
     this.onMatchAdded,
@@ -78,7 +80,11 @@ class MatchesScreen extends StatelessWidget {
             onTap: () => Navigator.push<Match?>(
               context,
               MaterialPageRoute(
-                builder: (_) => MatchViewScreen(match: match, isCoach: isCoach),
+                builder: (_) => MatchViewScreen(
+                  match: match,
+                  isCoach: isCoach,
+                  currentTeamId: currentTeamId,
+                ),
               ),
             ).then((result) {
               if (result == null) {

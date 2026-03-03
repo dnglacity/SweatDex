@@ -1,16 +1,16 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../constants/date_constants.dart';
 import '../models/match.dart';
 import '../services/player_service.dart';
 import '../utils/ui_helpers.dart';
 import 'game_roster_screen.dart';
 import 'match_format_screen.dart';
-import 'match_play_screen.dart';
 
 // =============================================================================
-// match_view_screen.dart  (AOD v1.13)
+// match_view_screen.dart  (AOD v1.22)
 //
 // Full-screen view for a single match. Opened when the user taps a match card
 // in MatchesScreen. The top-right overflow menu includes "Match Settings" and,
@@ -18,7 +18,7 @@ import 'match_play_screen.dart';
 // A clipboard icon (coaches only) opens the Select Roster picker.
 // =============================================================================
 
-enum _MatchMenuItem { settings, createInvite }
+enum _MatchMenuItem { settings, createInvite, removeOpponent }
 
 /// Lightweight roster entry used by the Select Roster picker.
 class _RosterEntry {
@@ -45,11 +45,15 @@ class _RosterEntry {
 class MatchViewScreen extends StatefulWidget {
   final Match match;
   final bool isCoach;
+  // The team the current user belongs to. Used to distinguish the match-owning
+  // team (sees "Stage Match") from an opposing team (sees "Submit Roster").
+  final String? currentTeamId;
 
   const MatchViewScreen({
     super.key,
     required this.match,
     this.isCoach = false,
+    this.currentTeamId,
   });
 
   @override
@@ -60,36 +64,198 @@ class _MatchViewScreenState extends State<MatchViewScreen> {
   late Match _match;
   String? _selectedRosterId;
   String? _selectedRosterName;
+  bool _isStaged = false;
+
+  // True when the current user belongs to the team that created the match.
+  // Falls back to true when currentTeamId is unknown (e.g. legacy callers).
+  bool get _isMatchOwner =>
+      widget.currentTeamId == null ||
+      widget.currentTeamId == _match.teamId;
 
   // Roster preview data loaded when a roster is selected.
   List<Map<String, dynamic>> _rosterStarters = [];
   List<Map<String, dynamic>> _rosterSubs = [];
   bool _rosterPreviewLoading = false;
+  MatchFormatTemplate? _rosterFormat;
+  Map<String, String> _formatSlots = {}; // "$sIdx-$pIdx" → playerId
+
+  RealtimeChannel? _matchChannel;
+
+  // Actual team name of the opponent, populated after invite is accepted.
+  String? _linkedTeamName;
 
   @override
   void initState() {
     super.initState();
     _match = widget.match;
+    _isStaged = widget.match.isStaged;
     _selectedRosterId = widget.match.selectedRosterId;
     _selectedRosterName = widget.match.selectedRosterName;
     if (_selectedRosterId != null) _loadRosterPreview(_selectedRosterId!);
+    // Refresh the match row from DB so linked_match_id and is_staged are current,
+    // then subscribe to realtime updates.
+    _refreshMatchRow();
+  }
+
+  /// Fetches the latest match row from DB to pick up linked_match_id / is_staged
+  /// changes that occurred after the match list was last loaded.
+  Future<void> _refreshMatchRow() async {
+    try {
+      final row = await Supabase.instance.client
+          .from('matches')
+          .select('is_staged, linked_match_id')
+          .eq('id', _match.id)
+          .single();
+      if (!mounted) return;
+      final linkedId = row['linked_match_id'] as String?;
+      setState(() {
+        _match = _match.copyWith(linkedMatchId: linkedId);
+        // Only update is_staged from own row if we are the match owner.
+        if (_isMatchOwner) _isStaged = row['is_staged'] == true;
+      });
+      // For the match owner, fetch the opponent's actual team name once linked.
+      if (_isMatchOwner && linkedId != null) {
+        _fetchLinkedTeamName(linkedId);
+      }
+      // For Team B, fetch is_staged from Team A's linked row.
+      if (!_isMatchOwner && linkedId != null) {
+        _fetchLinkedMatchStaged(linkedId);
+      }
+    } catch (_) {}
+    _subscribeToMatchStaged();
+  }
+
+  /// Fetches the opponent's actual team name via a SECURITY DEFINER RPC,
+  /// which bypasses the matches RLS policy that would otherwise block Team A
+  /// from reading Team B's match row directly.
+  Future<void> _fetchLinkedTeamName(String linkedId) async {
+    try {
+      final result = await Supabase.instance.client
+          .rpc('get_linked_match_team_name', params: {'p_match_id': _match.id});
+      if (mounted) {
+        setState(() => _linkedTeamName = result as String?);
+      }
+    } catch (_) {}
+  }
+
+  /// Fetches the current is_staged value from Team A's match row (the linked row).
+  Future<void> _fetchLinkedMatchStaged(String linkedId) async {
+    try {
+      final row = await Supabase.instance.client
+          .from('matches')
+          .select('is_staged')
+          .eq('id', linkedId)
+          .single();
+      if (mounted) {
+        setState(() => _isStaged = row['is_staged'] == true);
+      }
+    } catch (_) {}
+  }
+
+  void _subscribeToMatchStaged() {
+    // For match owners subscribe to their own row.
+    // For opponents (Team B), subscribe to the linked row (Team A's row) so
+    // that staging by Team A is reflected in real time.
+    final watchId = (!_isMatchOwner && _match.linkedMatchId != null)
+        ? _match.linkedMatchId!
+        : _match.id;
+
+    _matchChannel = Supabase.instance.client
+        .channel('match_staged_$watchId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'matches',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'id',
+            value: watchId,
+          ),
+          callback: (payload) {
+            final newRow = payload.newRecord;
+            if (mounted) {
+              setState(() {
+                _isStaged = newRow['is_staged'] == true;
+                // Match owner: capture linked_match_id updates (e.g. Team B joins).
+                if (_isMatchOwner) {
+                  final linkedId = newRow['linked_match_id'] as String?;
+                  _match = _match.copyWith(linkedMatchId: linkedId);
+                  // Fetch opponent name when they first join.
+                  if (linkedId != null && _linkedTeamName == null) {
+                    _fetchLinkedTeamName(linkedId);
+                  }
+                  // Clear opponent name if opponent was removed.
+                  if (linkedId == null) _linkedTeamName = null;
+                }
+              });
+            }
+          },
+        )
+        .subscribe();
+  }
+
+  @override
+  void dispose() {
+    _matchChannel?.unsubscribe();
+    super.dispose();
   }
 
   Future<void> _loadRosterPreview(String rosterId) async {
     if (!mounted) return;
     setState(() => _rosterPreviewLoading = true);
     try {
-      final data = await PlayerService().getGameRosterById(rosterId);
+      final service = PlayerService();
+      final data = await service.getGameRosterById(rosterId);
       if (!mounted) return;
       if (data != null) {
-        final starters = (data['starters'] as List<dynamic>? ?? [])
-            .cast<Map<String, dynamic>>();
-        final subs = (data['substitutes'] as List<dynamic>? ?? [])
-            .cast<Map<String, dynamic>>();
+        // The starters/substitutes columns store slot objects
+        // {player_id, slot_number, position_override} — not full player data.
+        // Fetch the team's players so we can enrich each slot with a name.
+        final players = await service.getPlayers(_match.teamId);
+        if (!mounted) return;
+        final playerMap = {for (final p in players) p.id: p};
+
+        List<Map<String, dynamic>> enrichSlots(dynamic raw) {
+          if (raw == null) return [];
+          final slots = (raw as List<dynamic>).cast<Map<String, dynamic>>();
+          // Sort by slot_number so order is preserved.
+          slots.sort((a, b) =>
+              ((a['slot_number'] ?? 0) as int)
+                  .compareTo((b['slot_number'] ?? 0) as int));
+          return slots.map((slot) {
+            final pid = slot['player_id'] as String? ?? '';
+            final player = playerMap[pid];
+            return {
+              'id': pid,
+              'name': player?.name ?? '',
+              'position': player?.position ?? '',
+              'position_override': slot['position_override'] as String? ?? '',
+            };
+          }).where((m) => (m['name'] as String).isNotEmpty).toList();
+        }
+
+        final starters = enrichSlots(data['starters']);
+        final subs = enrichSlots(data['substitutes']);
+
+        // Load format template if one is attached to this roster.
+        MatchFormatTemplate? format;
+        Map<String, String> slots = {};
+        final templateId = data['match_format_template_id'] as String?;
+        if (templateId != null) {
+          final row = await service.getMatchFormatTemplateById(templateId);
+          if (!mounted) return;
+          if (row != null) format = MatchFormatTemplate.fromMap(row);
+        }
+        final rawSlots = data['format_slots'] as Map<String, dynamic>?;
+        if (rawSlots != null) {
+          slots = rawSlots.map((k, v) => MapEntry(k, v as String));
+        }
+
         setState(() {
           _rosterStarters = starters;
           _rosterSubs = subs;
-          // Populate roster name from DB if not already set.
+          _rosterFormat = format;
+          _formatSlots = slots;
           _selectedRosterName ??= data['title'] as String?;
           _rosterPreviewLoading = false;
         });
@@ -109,49 +275,68 @@ class _MatchViewScreenState extends State<MatchViewScreen> {
 
     return Scaffold(
         appBar: AppBar(
-          title: Text(_match.title, overflow: TextOverflow.ellipsis),
+          title: Text(
+            _isMatchOwner && _linkedTeamName != null
+                ? '${_match.myTeamName} vs. $_linkedTeamName'
+                : _match.title,
+            overflow: TextOverflow.ellipsis,
+          ),
           leading: BackButton(
             onPressed: () => Navigator.of(context).pop(_match),
           ),
           actions: [
-            if (widget.isCoach)
+            if (widget.isCoach && !_match.isGuestMatch)
               IconButton(
                 icon: const Icon(Icons.assignment_outlined),
                 tooltip: 'Select Roster',
                 onPressed: () => _showSelectRosterSheet(context),
               ),
-            PopupMenuButton<_MatchMenuItem>(
-              onSelected: (item) {
-                if (item == _MatchMenuItem.settings) {
-                  _showMatchSettings(context);
-                } else if (item == _MatchMenuItem.createInvite) {
-                  _showMatchInviteDialog(context);
-                }
-              },
-              itemBuilder: (_) => [
-                const PopupMenuItem(
-                  value: _MatchMenuItem.settings,
-                  child: Row(
-                    children: [
-                      Icon(Icons.settings_outlined),
-                      SizedBox(width: 12),
-                      Text('Match Settings'),
-                    ],
-                  ),
-                ),
-                if (widget.isCoach)
+            if (!_match.isGuestMatch)
+              PopupMenuButton<_MatchMenuItem>(
+                onSelected: (item) {
+                  if (item == _MatchMenuItem.settings) {
+                    _showMatchSettings(context);
+                  } else if (item == _MatchMenuItem.createInvite) {
+                    _showMatchInviteDialog(context);
+                  } else if (item == _MatchMenuItem.removeOpponent) {
+                    _confirmRemoveOpponent(context);
+                  }
+                },
+                itemBuilder: (_) => [
                   const PopupMenuItem(
-                    value: _MatchMenuItem.createInvite,
+                    value: _MatchMenuItem.settings,
                     child: Row(
                       children: [
-                        Icon(Icons.share_outlined),
+                        Icon(Icons.settings_outlined),
                         SizedBox(width: 12),
-                        Text('Create Invite'),
+                        Text('Match Settings'),
                       ],
                     ),
                   ),
-              ],
-            ),
+                  if (widget.isCoach)
+                    const PopupMenuItem(
+                      value: _MatchMenuItem.createInvite,
+                      child: Row(
+                        children: [
+                          Icon(Icons.share_outlined),
+                          SizedBox(width: 12),
+                          Text('Create Invite'),
+                        ],
+                      ),
+                    ),
+                  const PopupMenuItem(
+                    value: _MatchMenuItem.removeOpponent,
+                    child: Row(
+                      children: [
+                        Icon(Icons.link_off, color: Colors.red),
+                        SizedBox(width: 12),
+                        Text('Remove Opposing Team',
+                            style: TextStyle(color: Colors.red)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
           ],
         ),
         body: ListView(
@@ -212,6 +397,8 @@ class _MatchViewScreenState extends State<MatchViewScreen> {
                     label: 'My Team',
                     name: _match.myTeamName,
                     rosterLabel: _selectedRosterName,
+                    // Checkmark shows on the "My Team" block only for the match owner.
+                    showCheckmark: _isStaged && _isMatchOwner,
                     cs: cs,
                     tt: tt,
                   ),
@@ -229,8 +416,19 @@ class _MatchViewScreenState extends State<MatchViewScreen> {
                 Expanded(
                   child: _TeamBlock(
                     label: 'Opponent',
-                    name: _match.opponentName,
-                    // Future: pass opponent's selected roster name here.
+                    // Match owner: show the linked team's actual name once the
+                    // invite is accepted; otherwise show a pending placeholder.
+                    // Non-owner: opponent_name was populated by the RPC.
+                    name: _isMatchOwner
+                        ? (_linkedTeamName ??
+                            (_match.linkedMatchId == null
+                                ? null // signals "awaiting"
+                                : _match.opponentName))
+                        : _match.opponentName,
+                    // When the viewer is NOT the match owner, the opponent IS
+                    // Team A (the match creator). Show the checkmark when staged.
+                    showCheckmark: _isStaged && !_isMatchOwner,
+                    checkmarkOnRight: true,
                     cs: cs,
                     tt: tt,
                   ),
@@ -249,6 +447,8 @@ class _MatchViewScreenState extends State<MatchViewScreen> {
                 subs: _rosterSubs,
                 loading: _rosterPreviewLoading,
                 isCoach: widget.isCoach,
+                format: _rosterFormat,
+                formatSlots: _formatSlots,
                 onViewRoster: () => _openRosterInEditor(),
               ),
 
@@ -275,44 +475,108 @@ class _MatchViewScreenState extends State<MatchViewScreen> {
             ],
           ],
         ),
-        floatingActionButton: FloatingActionButton.extended(
-          onPressed: () {
-            showDialog(
-              context: context,
-              builder: (context) => AlertDialog(
-                title: const Text('Stage Match'),
-                content: const Text(
-                  'The match will be staged and rosters will be exchanged.',
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Cancel'),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => MatchPlayScreen(
-                            match: widget.match,
-                            isCoach: widget.isCoach,
-                          ),
-                        ),
-                      );
-                    },
-                    child: const Text('Stage'),
-                  ),
-                ],
-              ),
-            );
-          },
-          icon: const Icon(Icons.rocket_launch),
-          label: const Text('Stage Match'),
-          backgroundColor: const Color(0xFFF4C430),
-          foregroundColor: const Color(0xFF1A3A6B),
-        ),
+        floatingActionButton: _buildCoachFab(context),
         floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+    );
+  }
+
+  // ── FAB: Stage Match (match owner) or Submit Roster (opposing team) ─────
+
+  Widget _buildCoachFab(BuildContext context) {
+    if (_isMatchOwner) {
+      return FloatingActionButton.extended(
+        onPressed: _isStaged
+            ? () {
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Undo Staging'),
+                    content: const Text(
+                      'This will remove your ready status. '
+                      'The checkmark will be cleared for both teams.',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Cancel'),
+                      ),
+                      TextButton(
+                        onPressed: () async {
+                          Navigator.of(context).pop();
+                          await PlayerService().unstageMatch(_match.id);
+                          if (mounted) setState(() => _isStaged = false);
+                        },
+                        child: const Text('Undo'),
+                      ),
+                    ],
+                  ),
+                );
+              }
+            : () {
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Stage Match'),
+                    content: const Text(
+                      'This will mark your team as ready. '
+                      'A checkmark will appear next to your team name on both screens.',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Cancel'),
+                      ),
+                      TextButton(
+                        onPressed: () async {
+                          Navigator.of(context).pop();
+                          await PlayerService().stageMatch(_match.id);
+                          if (mounted) setState(() => _isStaged = true);
+                        },
+                        child: const Text('Stage'),
+                      ),
+                    ],
+                  ),
+                );
+              },
+        icon: _isStaged
+            ? const Icon(Icons.check_circle, color: Colors.green)
+            : const Icon(Icons.rocket_launch),
+        label: Text(_isStaged ? 'Staged' : 'Stage Match'),
+        backgroundColor: const Color(0xFFF4C430),
+        foregroundColor: const Color(0xFF1A3A6B),
+      );
+    }
+
+    // Opposing team coach — roster submission only.
+    return FloatingActionButton.extended(
+      onPressed: () {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Submit Roster'),
+            content: const Text(
+              'Your roster will be submitted to the match.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  // TODO: implement roster submission for opposing team
+                },
+                child: const Text('Submit'),
+              ),
+            ],
+          ),
+        );
+      },
+      icon: const Icon(Icons.send),
+      label: const Text('Submit Roster'),
+      backgroundColor: const Color(0xFFF4C430),
+      foregroundColor: const Color(0xFF1A3A6B),
     );
   }
 
@@ -372,6 +636,68 @@ class _MatchViewScreenState extends State<MatchViewScreen> {
     );
     // Reload preview after returning from editor.
     if (mounted) _loadRosterPreview(_selectedRosterId!);
+  }
+
+  // ── Remove Opposing Team ──────────────────────────────────────────────────
+
+  void _confirmRemoveOpponent(BuildContext context) {
+    final messenger = ScaffoldMessenger.of(context);
+
+    showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove Opposing Team?'),
+        content: Text(
+          'This will disconnect ${_match.opponentName} from this match. '
+          'Their match record will be deleted and they will need a new invite to rejoin.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    ).then((confirmed) async {
+      if (confirmed != true || !mounted) return;
+      final opponentName = _match.opponentName;
+      try {
+        // Fetch the latest linked_match_id directly — don't rely on cached state.
+        final row = await Supabase.instance.client
+            .from('matches')
+            .select('linked_match_id')
+            .eq('id', _match.id)
+            .single();
+        if (!mounted) return;
+        final linkedId = row['linked_match_id'] as String?;
+        if (linkedId == null) {
+          messenger.showSnackBar(
+            const SnackBar(content: Text('No opposing team has joined this match yet.')),
+          );
+          return;
+        }
+        await PlayerService().removeOpposingTeam(_match.id);
+        if (!mounted) return;
+        setState(() {
+          _match = _match.copyWith(linkedMatchId: null);
+          _isStaged = false;
+        });
+        // Re-subscribe now watching own row (no longer a linked row).
+        _matchChannel?.unsubscribe();
+        _subscribeToMatchStaged();
+        messenger.showSnackBar(
+          SnackBar(content: Text('$opponentName has been removed.')),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        messenger.showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
+    });
   }
 
   // ── Match Invite ─────────────────────────────────────────────────────────
@@ -795,15 +1121,19 @@ class _MatchViewScreenState extends State<MatchViewScreen> {
 
 class _TeamBlock extends StatelessWidget {
   final String label;
-  final String name;
+  final String? name; // null = awaiting opponent
   final String? rosterLabel;
+  final bool showCheckmark;
+  final bool checkmarkOnRight;
   final ColorScheme cs;
   final TextTheme tt;
 
   const _TeamBlock({
     required this.label,
-    required this.name,
+    this.name,
     this.rosterLabel,
+    this.showCheckmark = false,
+    this.checkmarkOnRight = false,
     required this.cs,
     required this.tt,
   });
@@ -822,12 +1152,38 @@ class _TeamBlock extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        Text(
-          name,
-          textAlign: TextAlign.center,
-          style: tt.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (showCheckmark && !checkmarkOnRight) ...[
+              const Icon(Icons.check_circle, color: Colors.green, size: 18),
+              const SizedBox(width: 4),
+            ],
+            Flexible(
+              child: name != null
+                  ? Text(
+                      name!,
+                      textAlign: TextAlign.center,
+                      style:
+                          tt.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    )
+                  : Text(
+                      'Awaiting opponent...',
+                      textAlign: TextAlign.center,
+                      style: tt.bodyMedium?.copyWith(
+                        color: cs.onSurface.withValues(alpha: 0.4),
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+            ),
+            if (showCheckmark && checkmarkOnRight) ...[
+              const SizedBox(width: 4),
+              const Icon(Icons.check_circle, color: Colors.green, size: 18),
+            ],
+          ],
         ),
         if (rosterLabel != null) ...[
           const SizedBox(height: 6),
@@ -913,6 +1269,8 @@ class _RosterPreviewPanel extends StatelessWidget {
   final List<Map<String, dynamic>> subs;
   final bool loading;
   final bool isCoach;
+  final MatchFormatTemplate? format;
+  final Map<String, String> formatSlots; // "$sIdx-$pIdx" → playerId
   final VoidCallback onViewRoster;
 
   const _RosterPreviewPanel({
@@ -921,6 +1279,8 @@ class _RosterPreviewPanel extends StatelessWidget {
     required this.subs,
     required this.loading,
     required this.isCoach,
+    this.format,
+    this.formatSlots = const {},
     required this.onViewRoster,
   });
 
@@ -928,6 +1288,13 @@ class _RosterPreviewPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+
+    // Build a map of playerId → player for format slot lookups.
+    final playerById = <String, Map<String, dynamic>>{};
+    for (final p in [...starters, ...subs]) {
+      final id = p['id'] as String?;
+      if (id != null) playerById[id] = p;
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -977,6 +1344,128 @@ class _RosterPreviewPanel extends StatelessWidget {
             ),
           )
         else ...[
+          // ── Match Format Sections ─────────────────────────────────────────
+          if (format != null) ...[
+            Text(
+              format!.name,
+              style: tt.labelSmall?.copyWith(
+                color: cs.onSurface.withValues(alpha: 0.55),
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.6,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...List.generate(format!.sections.length, (sIdx) {
+              final section = format!.sections[sIdx];
+              return Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerLowest,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                      color: cs.outlineVariant.withValues(alpha: 0.5)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Section header
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: cs.primaryContainer.withValues(alpha: 0.4),
+                        borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(8)),
+                      ),
+                      child: Text(
+                        section.title,
+                        style: tt.labelMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: cs.onSurface,
+                        ),
+                      ),
+                    ),
+                    // Position rows
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      child: Column(
+                        children: List.generate(section.positionCount, (pIdx) {
+                          final key = '$sIdx-$pIdx';
+                          final assignedId = formatSlots[key];
+                          final assigned = assignedId != null
+                              ? playerById[assignedId]
+                              : null;
+                          final posLabel = assigned != null
+                              ? ((assigned['position_override'] as String?)
+                                          ?.isNotEmpty ==
+                                      true
+                                  ? assigned['position_override'] as String
+                                  : assigned['position'] as String? ?? '')
+                              : '';
+                          return Padding(
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 3),
+                            child: Row(
+                              children: [
+                                SizedBox(
+                                  width: 22,
+                                  child: Text(
+                                    '${pIdx + 1}',
+                                    style: tt.bodySmall?.copyWith(
+                                      color: cs.onSurface
+                                          .withValues(alpha: 0.4),
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                if (assigned != null) ...[
+                                  Icon(Icons.person,
+                                      size: 14, color: cs.primary),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      assigned['name'] as String? ?? '—',
+                                      style: tt.bodyMedium,
+                                    ),
+                                  ),
+                                  if (posLabel.isNotEmpty)
+                                    Text(
+                                      posLabel,
+                                      style: tt.bodySmall?.copyWith(
+                                        color: cs.onSurface
+                                            .withValues(alpha: 0.5),
+                                      ),
+                                    ),
+                                ] else ...[
+                                  Icon(Icons.person_outline,
+                                      size: 14,
+                                      color: cs.onSurface
+                                          .withValues(alpha: 0.3)),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '—',
+                                    style: tt.bodyMedium?.copyWith(
+                                      color: cs.onSurface
+                                          .withValues(alpha: 0.3),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          );
+                        }),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+            const SizedBox(height: 4),
+          ],
+
           // ── Starters ──────────────────────────────────────────────────────
           if (starters.isNotEmpty) ...[
             Text(

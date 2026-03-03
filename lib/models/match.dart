@@ -1,5 +1,5 @@
 // =============================================================================
-// match.dart  (AOD v1.14)
+// match.dart  (AOD v1.22+)
 //
 // Match model — persisted to public.matches in Supabase.
 // Fields mirror the DB columns defined in supabase_script.md.
@@ -18,6 +18,14 @@ class Match {
   // selectedRosterName is in-memory only (derived from the roster title).
   final String? selectedRosterId;
   final String? selectedRosterName;
+  // isStaged is persisted to matches.is_staged; set by the match owner when
+  // they confirm they are ready — shown as a green checkmark on both screens.
+  final bool isStaged;
+  // linkedMatchId is the opposing team's match row. Set after invite redemption.
+  final String? linkedMatchId;
+  // isGuestMatch is true for match rows created when a team accepts a match
+  // invite (Team B). Guest teams cannot modify match settings or create invites.
+  final bool isGuestMatch;
 
   const Match({
     required this.id,
@@ -30,6 +38,9 @@ class Match {
     this.createdAt,
     this.selectedRosterId,
     this.selectedRosterName,
+    this.isStaged = false,
+    this.linkedMatchId,
+    this.isGuestMatch = false,
   });
 
   String get title => '$myTeamName vs. $opponentName';
@@ -47,6 +58,9 @@ class Match {
             ? DateTime.parse(m['created_at'] as String).toLocal()
             : null,
         selectedRosterId: m['selected_roster_id'] as String?,
+        isStaged: m['is_staged'] as bool? ?? false,
+        linkedMatchId: m['linked_match_id'] as String?,
+        isGuestMatch: m['is_guest_match'] as bool? ?? false,
       );
 
   Map<String, dynamic> toMap() => {
@@ -69,6 +83,9 @@ class Match {
     DateTime? createdAt,
     Object? selectedRosterId = _sentinel,
     Object? selectedRosterName = _sentinel,
+    bool? isStaged,
+    Object? linkedMatchId = _sentinel,
+    bool? isGuestMatch,
   }) =>
       Match(
         id: id ?? this.id,
@@ -85,6 +102,11 @@ class Match {
         selectedRosterName: identical(selectedRosterName, _sentinel)
             ? this.selectedRosterName
             : selectedRosterName as String?,
+        isStaged: isStaged ?? this.isStaged,
+        linkedMatchId: identical(linkedMatchId, _sentinel)
+            ? this.linkedMatchId
+            : linkedMatchId as String?,
+        isGuestMatch: isGuestMatch ?? this.isGuestMatch,
       );
 }
 

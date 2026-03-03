@@ -10,7 +10,8 @@
       "Bash(wc:*)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "WebFetch(domain:github.com)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(sed:*)"
     ]
   }
 }

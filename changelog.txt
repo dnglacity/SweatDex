@@ -1,3 +1,61 @@
+v1.22 03.02.2026 MatchView: hide match settings and invite options from guest team
+
+- Added: is_guest_match BOOLEAN column to matches table (default false)
+- Changed: redeem_match_invite RPC sets is_guest_match = true on the match row created for the accepting team (Team B)
+- Changed: Match model includes isGuestMatch field, populated from DB column
+- Fixed: Guest team (Team B) no longer sees the overflow menu (Match Settings, Create Invite, Remove Opponent) in MatchViewScreen
+- Fixed: Guest team (Team B) no longer sees the Select Roster icon button in the AppBar
+- Changed: Visibility of AppBar actions now gates on !match.isGuestMatch instead of _isMatchOwner (which was always true for each team's own row)
+
+v1.22 03.02.2026 MatchView: populate opponent name from Team B's actual team name
+
+- Fixed: Opponent block in MatchViewScreen showed the placeholder name Team A typed at match creation instead of Team B's real team name
+- Fixed: redeem_match_invite RPC now sets Team B's my_team_name from teams.team_name (actual DB team name) instead of copying opponent_name from Team A's row
+- Fixed: Team A could not read Team B's match row due to matches RLS policy (team_members check) — added get_linked_match_team_name SECURITY DEFINER RPC that resolves the linked match's my_team_name and returns it to Team A safely
+- Added: _linkedTeamName state in MatchViewScreen, populated on load and via Realtime when linked_match_id first appears
+- Changed: Opponent _TeamBlock shows "Awaiting opponent..." (italic, muted) when no opponent has joined; shows linked team name once invite is accepted
+- Changed: AppBar title updates to reflect the real opponent name after invite acceptance
+
+v1.22 03.02.2026 MatchView: remove opposing team + fix Team B staged checkmark
+
+- Added: "Remove Opposing Team" option in match owner's overflow menu (visible only when an opponent has joined via invite); styled red with link_off icon
+- Added: Confirmation dialog before removing — warns that opponent's match record will be deleted and a new invite will be needed to rejoin
+- Added: remove_opposing_team SECURITY DEFINER RPC — validates caller is coach/owner, deletes the opposing team's mirror match row, clears linked_match_id and resets is_staged on the owner's row
+- Added: PlayerService.removeOpposingTeam(matchId) calls the new RPC
+- Fixed: After removal, local state clears linkedMatchId and _isStaged, and Realtime re-subscribes to the owner's own row
+- Fixed: Team B was not seeing Team A's green checkmark — root cause was that each team has its own mirrored match row; Team B's row is_staged was never updated when Team A staged
+- Fixed: Match model now includes linkedMatchId field (parsed from linked_match_id column)
+- Changed: getMatches query now selects linked_match_id
+- Changed: When Team B opens a match (!_isMatchOwner && linkedMatchId != null), MatchViewScreen fetches initial is_staged from Team A's linked row and subscribes Realtime to that row instead of its own mirror
+- Changed: "My Team" checkmark now only shows for the match owner (was incorrectly showing for Team B when Team A had staged)
+
+v1.22 03.02.2026 MatchView: fix staging checkmark visibility and add undo staging
+- Fixed: Team B incorrectly saw checkmark next to their own name when Team A staged — checkmark now always renders on the match owner's team block (myTeamName) regardless of viewer
+- Fixed: Team B's realtime subscription never fired when Team A staged — matches are mirrored rows with no link; added linked_match_id column and SECURITY DEFINER RPCs stage_match / unstage_match that update both rows atomically
+- Changed: redeem_match_invite RPC updated to populate linked_match_id bidirectionally on both match rows when an invite is redeemed
+- Added: unstage_match RPC (SECURITY DEFINER) sets is_staged = false on both linked rows
+- Changed: PlayerService.stageMatch and unstageMatch now call stage_match / unstage_match RPCs instead of direct table updates
+- Added: Stage Match FAB is now re-pressable when already staged; pressing it shows "Undo Staging" confirmation dialog and calls unstageMatch()
+- Changed: Realtime callback now reflects both true and false values for is_staged (previously only handled true)
+- Changed: Supabase_script.md updated with full migration (ALTER TABLE, updated redeem_match_invite, new stage_match / unstage_match RPCs, GRANT statements)
+
+v1.22 03.02.2026 MatchView: stage match sets checkmark on both teams' screens
+- Added: is_staged boolean column to matches table (see Supabase_script.md for migration)
+- Changed: Match model gains isStaged field (fromMap reads is_staged, copyWith supports it)
+- Added: PlayerService.stageMatch(matchId) sets is_staged = true on the DB row
+- Changed: getMatches select now includes is_staged column
+- Changed: Stage Match FAB no longer navigates to MatchPlayScreen; instead calls stageMatch() and sets local _isStaged = true; button becomes disabled and shows "Staged" label after staging
+- Added: Supabase Realtime subscription in MatchViewScreen watches for is_staged updates on the current match row — opposing team's screen reflects the checkmark in real time
+- Added: green checkmark icon to the left of the team name in _TeamBlock when showCheckmark is true; match owner sees it next to "My Team", opposing team sees it next to "Opponent"
+- Changed: match_view_screen.dart imports supabase_flutter for RealtimeChannel; disposes channel in dispose()
+
+v1.22 03.02.2026 MatchView: show format sections, position assignments, and player names
+- Added: _rosterFormat and _formatSlots state vars to _MatchViewScreenState
+- Changed: _loadRosterPreview now fetches match_format_template_id and format_slots from the roster row, loads the MatchFormatTemplate via getMatchFormatTemplateById, and enriches starters/subs slots with player name and position by joining against getPlayers
+- Fixed: starters and subs preview was showing blank names — the DB stores slot objects {player_id, slot_number, position_override}, not full player records; enrichment now resolves names correctly
+- Changed: _RosterPreviewPanel accepts format (MatchFormatTemplate?) and formatSlots (Map<String, String>) parameters
+- Added: format sections block in _RosterPreviewPanel — renders format name label, then each section as a card with colored header and numbered position rows showing assigned player name + position (or — if unassigned); displayed above the starters and subs lists
+
 v1.21 03.02.2026 MatchView: inline roster preview + persist selected roster to DB
 - Added: selected_roster_id column to matches table (see Supabase_script.md for migration)
 - Changed: Match.fromMap() now reads selected_roster_id from DB; comment updated to reflect field is persisted

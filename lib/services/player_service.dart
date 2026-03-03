@@ -960,7 +960,7 @@ class PlayerService {
     try {
       final response = await _supabase
           .from('matches')
-          .select('id, team_id, my_team_name, opponent_name, match_date, is_home, notes, created_at, selected_roster_id')
+          .select('id, team_id, my_team_name, opponent_name, match_date, is_home, notes, created_at, selected_roster_id, is_staged, linked_match_id, is_guest_match')
           .eq('team_id', teamId)
           .order('match_date', ascending: true);
       return (response as List<dynamic>).cast<Map<String, dynamic>>();
@@ -1034,6 +1034,35 @@ class PlayerService {
       await _supabase.from('matches').delete().eq('id', matchId);
     } catch (e) {
       _dbError(e, 'Error deleting match.');
+    }
+  }
+
+  /// Stages the match via RPC, which also updates the linked (opposing team's) row.
+  Future<void> stageMatch(String matchId) async {
+    try {
+      await _supabase.rpc('stage_match', params: {'p_match_id': matchId});
+    } catch (e) {
+      _dbError(e, 'Error staging match.');
+    }
+  }
+
+  /// Unstages the match via RPC, which also updates the linked (opposing team's) row.
+  Future<void> unstageMatch(String matchId) async {
+    try {
+      await _supabase.rpc('unstage_match', params: {'p_match_id': matchId});
+    } catch (e) {
+      _dbError(e, 'Error unstaging match.');
+    }
+  }
+
+  /// Removes the opposing team's mirror match row and clears linked_match_id on
+  /// the owner's row. Only the match owner (coach/owner/team_manager) may call this.
+  Future<void> removeOpposingTeam(String matchId) async {
+    try {
+      await _supabase
+          .rpc('remove_opposing_team', params: {'p_match_id': matchId});
+    } catch (e) {
+      _dbError(e, 'Error removing opposing team.');
     }
   }
 

@@ -1238,6 +1238,7 @@ class _RosterScreenState extends State<RosterScreen> {
           ? MatchesScreen(
               matches: _matches,
               isCoach: _isCoachOrOwner,
+              currentTeamId: widget.teamId,
               onMatchUpdated: (updated) {
                 setState(() {
                   final idx = _matches.indexWhere((m) => m.id == updated.id);
