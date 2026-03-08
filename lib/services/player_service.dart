@@ -1049,6 +1049,30 @@ class PlayerService {
     }
   }
 
+  /// Updates match settings via RPC, syncing changes to the linked row.
+  Future<void> updateMatchSettings({
+    required String matchId,
+    String? myTeamName,
+    String? opponentName,
+    DateTime? matchDate,
+    bool? isHome,
+    String? notes,
+  }) async {
+    try {
+      await _supabase.rpc('update_match_settings', params: {
+        'p_match_id': matchId,
+        if (myTeamName != null) 'p_my_team_name': myTeamName,
+        if (opponentName != null) 'p_opponent_name': opponentName,
+        if (matchDate != null)
+          'p_match_date': matchDate.toUtc().toIso8601String(),
+        if (isHome != null) 'p_is_home': isHome,
+        if (notes != null) 'p_notes': notes,
+      });
+    } catch (e) {
+      _dbError(e, 'Error updating match settings.');
+    }
+  }
+
   /// Deletes a match by [matchId].
   Future<void> deleteMatch(String matchId) async {
     try {
@@ -1086,6 +1110,16 @@ class PlayerService {
     }
   }
 
+  /// Unsends the guest team's roster: sets guest_roster_submitted = false on
+  /// the host's (Team A's) match row via a SECURITY DEFINER RPC.
+  Future<void> unsubmitGuestRoster(String matchId) async {
+    try {
+      await _supabase.rpc('unsubmit_guest_roster', params: {'p_match_id': matchId});
+    } catch (e) {
+      _dbError(e, 'Error unsending roster.');
+    }
+  }
+
   /// Leaves a guest match: deletes the caller's mirror match row and clears
   /// linked_match_id / is_staged on the host's row. Only the guest team may call this.
   Future<void> leaveMatch(String matchId) async {
@@ -1105,6 +1139,26 @@ class PlayerService {
           .rpc('remove_opposing_team', params: {'p_match_id': matchId});
     } catch (e) {
       _dbError(e, 'Error removing opposing team.');
+    }
+  }
+
+  /// Fetches the opponent's roster for a match via a SECURITY DEFINER RPC.
+  /// Returns a map with keys `team_name`, `roster_title`, `starters`, `substitutes`
+  /// where starters/substitutes are lists of {name, position, position_override}.
+  /// Returns null if the linked match has no selected roster.
+  Future<Map<String, dynamic>?> getLinkedMatchRoster(String matchId) async {
+    try {
+      final result = await _supabase
+          .rpc('get_linked_match_roster', params: {'p_match_id': matchId});
+      if (result == null) return null;
+      // RPC returns a single JSON object.
+      if (result is List) {
+        if (result.isEmpty) return null;
+        return result.first as Map<String, dynamic>;
+      }
+      return result as Map<String, dynamic>;
+    } catch (e) {
+      _dbError(e, 'Error fetching opponent roster.');
     }
   }
 
@@ -1138,6 +1192,21 @@ class PlayerService {
           .maybeSingle();
     } catch (e) {
       return null;
+    }
+  }
+
+  /// Returns all global core match format templates, ordered by sport then name.
+  Future<List<Map<String, dynamic>>> getCoreMatchFormatTemplates() async {
+    try {
+      final response = await _supabase
+          .from('core_match_format_templates')
+          .select('id, name, sport, sections, created_at')
+          .order('sport', ascending: true)
+          .order('name', ascending: true);
+      return (response as List<dynamic>).cast<Map<String, dynamic>>();
+    } catch (e) {
+      debugPrint('Error fetching core match format templates: $e');
+      return [];
     }
   }
 

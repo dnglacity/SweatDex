@@ -1,3 +1,36 @@
+[v1.23] 03.08.2026 Core Match Format Template Library
+
+- Added: Global `core_match_format_templates` Supabase table with RLS (read-only for authenticated users)
+- Added: `getCoreMatchFormatTemplates()` in PlayerService fetching global templates ordered by sport and name
+- Added: "★ Core Library" section in the Match Format picker sheet, shown above team formats
+- Added: `sport` field to `MatchFormatTemplate` model for display in the picker
+- Changed: When a core template is selected, it is auto-copied into the team's own templates (or reused by name if a copy already exists)
+- Added: `_SectionHeader` widget used in the format picker to label Core Library and My Formats sections
+
+[v1.23] 03.08.2026 MatchView: Start Match side-by-side roster view
+
+- Added: "Start Match" floating button stacked above "Staged" FAB, visible to the host when both teams are staged
+- Added: Confirmation dialog before starting the match
+- Added: MatchLiveScreen showing both teams' game rosters side by side with match format sections, position slots, starters, and substitutes
+- Added: get_linked_match_roster SECURITY DEFINER RPC that fetches the opponent's selected roster with enriched player names, format template sections, and enriched format slot assignments
+- Added: getLinkedMatchRoster() method in PlayerService calling the new RPC
+
+[v1.23] 03.08.2026 MatchView: sync host settings to guest in real time
+
+- Fixed: Match settings edits (date, notes, home/away, team name) by the host were not propagated to the guest team's mirror row — guest saw stale data
+- Added: update_match_settings SECURITY DEFINER RPC that updates both the host's and guest's match rows atomically (host my_team_name → guest opponent_name, is_home inverted, date/notes mirrored)
+- Added: updateMatchSettings() method in PlayerService calling the new RPC
+- Changed: _openEditSheet() now calls updateMatchSettings() instead of updateMatch() and sends a match_settings_updated broadcast event
+- Changed: postgres-changes callback now handles field updates for guests (my_team_name, opponent_name, match_date, is_home, notes, is_staged)
+- Added: match_settings_updated broadcast listener as a fallback for RLS-blocked postgres-changes
+- Changed: _refreshMatchRow() now fetches full settings columns (not just is_staged/linked_match_id) so guest refresh picks up all changes
+
+[v1.22] 03.05.2026 Game roster: return-to-available drop zone
+
+- Added: "Drop here to return to Available" DragTarget strip below the Substitutes Bench in the Roster tab of GameRosterScreen
+- Changed: Dragging any starter or substitute onto the new drop zone removes them from the roster and returns them to the Available tab
+- Changed: Drop zone highlights orange with an undo icon on hover; only accepts players currently assigned to starters or substitutes
+
 [v1.22] 03.03.2026 2026 CSV roster import
 
 - Added: CsvImportScreen (lib/screens/csv_import_screen.dart) — coaches can upload a .csv file to bulk-populate their team roster

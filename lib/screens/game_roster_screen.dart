@@ -621,7 +621,7 @@ class _GameRosterScreenState extends State<GameRosterScreen>
     if (mounted) Navigator.popUntil(context, (route) => route.isFirst);
   }
 
-  // ── Match Format picker ───────────────────────────────────────────────────
+  // ── Match Format ──────────────────────────────────────────────────────────
 
   Future<void> _openMatchFormatPicker() async {
     final selected = await showModalBottomSheet<MatchFormatTemplate>(
@@ -640,6 +640,79 @@ class _GameRosterScreenState extends State<GameRosterScreen>
       // Switch to the Roster tab so the format view is immediately visible.
       _tabController.animateTo(1);
     }
+  }
+
+  /// Shows a bottom sheet for the Match Format overflow menu option.
+  /// If a format is active, displays its name with a Remove button.
+  /// If no format is active, shows an Add button that opens the picker.
+  Future<void> _showMatchFormatOptions() async {
+    if (_activeFormat == null) {
+      // No format — go straight to picker.
+      await _openMatchFormatPicker();
+      return;
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Match Format',
+              style: Theme.of(ctx)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                const Icon(Icons.format_list_bulleted, size: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _activeFormat!.name,
+                    style: Theme.of(ctx).textTheme.bodyLarge,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _activeFormat = null;
+                      _formatSlots.clear();
+                    });
+                    Navigator.pop(ctx);
+                  },
+                  icon: const Icon(Icons.remove_circle_outline, size: 18),
+                  label: const Text('Remove'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red,
+                    side: const BorderSide(color: Colors.red),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Done'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -679,6 +752,8 @@ class _GameRosterScreenState extends State<GameRosterScreen>
                 await _showSlotDialog();
               } else if (v == 'date') {
                 await _showDateDialog();
+              } else if (v == 'matchFormat') {
+                await _showMatchFormatOptions();
               } else if (v == 'accountSettings') {
                 await Navigator.push(
                   context,
@@ -704,6 +779,14 @@ class _GameRosterScreenState extends State<GameRosterScreen>
                   Icon(Icons.calendar_today, size: 20),
                   SizedBox(width: 12),
                   Text('Change Date'),
+                ]),
+              ),
+              PopupMenuItem(
+                value: 'matchFormat',
+                child: Row(children: [
+                  Icon(Icons.format_list_bulleted, size: 20),
+                  SizedBox(width: 12),
+                  Text('Match Format'),
                 ]),
               ),
               PopupMenuDivider(),
@@ -842,57 +925,29 @@ class _GameRosterScreenState extends State<GameRosterScreen>
                 ),
               ],
             ),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-          child: Row(
-            children: [
-              // Match Format button — always visible bottom-left.
-              OutlinedButton.icon(
-                onPressed: _openMatchFormatPicker,
-                icon: const Icon(Icons.format_list_bulleted, size: 18),
-                label: Text(
-                  _activeFormat != null
-                      ? _activeFormat!.name
-                      : 'Match Format',
-                  overflow: TextOverflow.ellipsis,
-                ),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 10),
+      bottomNavigationBar: widget.onCancel != null
+          ? SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: widget.onCancel,
+                      icon: const Icon(Icons.close),
+                      label: const Text('Cancel Roster'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.red,
+                        side: const BorderSide(color: Colors.red),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              if (_activeFormat != null) ...[
-                const SizedBox(width: 4),
-                IconButton(
-                  icon: const Icon(Icons.close, size: 18),
-                  tooltip: 'Remove format',
-                  onPressed: () => setState(() {
-                    _activeFormat = null;
-                    _formatSlots.clear();
-                  }),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                      minWidth: 32, minHeight: 32),
-                ),
-              ],
-              const Spacer(),
-              if (widget.onCancel != null)
-                OutlinedButton.icon(
-                  onPressed: widget.onCancel,
-                  icon: const Icon(Icons.close),
-                  label: const Text('Cancel Roster'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red,
-                    side: const BorderSide(color: Colors.red),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
+            )
+          : null,
     );
   }
 }
@@ -1132,6 +1187,58 @@ class _RosterTabViewState extends State<_RosterTabView>
             ),
           ),
         ),
+        // ── Return to Available drop zone ──────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: DragTarget<Player>(
+            onWillAcceptWithDetails: (d) =>
+                widget.starters.any((s) => s.id == d.data.id) ||
+                widget.substitutes.any((s) => s.id == d.data.id),
+            onAcceptWithDetails: (d) {
+              if (widget.starters.any((s) => s.id == d.data.id)) {
+                widget.onRemoveStarter(d.data);
+              } else {
+                widget.onRemoveSub(d.data);
+              }
+            },
+            builder: (_, candidateData, __) {
+              final isHovering = candidateData.isNotEmpty;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                height: 48,
+                decoration: BoxDecoration(
+                  color: isHovering
+                      ? Colors.orange.withValues(alpha: 0.12)
+                      : Colors.transparent,
+                  border: Border.all(
+                    color: isHovering
+                        ? Colors.orange
+                        : Colors.grey.withValues(alpha: 0.35),
+                    width: isHovering ? 2 : 1,
+                  ),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.undo,
+                        size: 16,
+                        color: isHovering ? Colors.orange : Colors.grey[500]),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Drop here to return to Available',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontStyle: FontStyle.italic,
+                        color: isHovering ? Colors.orange : Colors.grey[500],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
       ],
     );
   }
@@ -1159,10 +1266,13 @@ class _RosterTabViewState extends State<_RosterTabView>
       ...widget.substitutes,
     ];
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
       children: [
-        // ── Left: sections + position slots ───────────────────────────────
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Left: sections + position slots ─────────────────────────
         Expanded(
           child: ListView.builder(
             padding: const EdgeInsets.fromLTRB(12, 12, 6, 12),
@@ -1329,6 +1439,61 @@ class _RosterTabViewState extends State<_RosterTabView>
                 ),
               ),
             ],
+          ),
+        ),
+      ],
+    ),
+        ),
+        // ── Return to Available drop zone ──────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: DragTarget<Player>(
+            onWillAcceptWithDetails: (d) =>
+                widget.starters.any((s) => s.id == d.data.id) ||
+                widget.substitutes.any((s) => s.id == d.data.id),
+            onAcceptWithDetails: (d) {
+              if (widget.starters.any((s) => s.id == d.data.id)) {
+                widget.onRemoveStarter(d.data);
+              } else {
+                widget.onRemoveSub(d.data);
+              }
+            },
+            builder: (_, candidateData, __) {
+              final isHovering = candidateData.isNotEmpty;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                height: 48,
+                decoration: BoxDecoration(
+                  color: isHovering
+                      ? Colors.orange.withValues(alpha: 0.12)
+                      : Colors.transparent,
+                  border: Border.all(
+                    color: isHovering
+                        ? Colors.orange
+                        : Colors.grey.withValues(alpha: 0.35),
+                    width: isHovering ? 2 : 1,
+                  ),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.undo,
+                        size: 16,
+                        color: isHovering ? Colors.orange : Colors.grey[500]),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Drop here to return to Available',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontStyle: FontStyle.italic,
+                        color: isHovering ? Colors.orange : Colors.grey[500],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
         ),
       ],
@@ -1717,6 +1882,7 @@ class _MatchFormatPickerSheet extends StatefulWidget {
 class _MatchFormatPickerSheetState extends State<_MatchFormatPickerSheet> {
   final _service = PlayerService();
   List<MatchFormatTemplate> _templates = [];
+  List<MatchFormatTemplate> _coreTemplates = [];
   bool _loading = true;
   String? _error;
 
@@ -1728,15 +1894,40 @@ class _MatchFormatPickerSheetState extends State<_MatchFormatPickerSheet> {
 
   Future<void> _load() async {
     try {
-      final rows = await _service.getMatchFormatTemplates(widget.teamId);
+      final teamRows = _service.getMatchFormatTemplates(widget.teamId);
+      final coreRows = _service.getCoreMatchFormatTemplates();
+      final results = await Future.wait([teamRows, coreRows]);
       if (mounted) {
         setState(() {
-          _templates = rows.map(MatchFormatTemplate.fromMap).toList();
+          _templates = results[0].map(MatchFormatTemplate.fromMap).toList();
+          _coreTemplates = results[1]
+              .map((r) => MatchFormatTemplate.fromMap({...r, 'team_id': ''}))
+              .toList();
           _loading = false;
         });
       }
     } catch (e) {
       if (mounted) setState(() { _error = e.toString(); _loading = false; });
+    }
+  }
+
+  Future<void> _selectCoreTemplate(MatchFormatTemplate core) async {
+    // Reuse existing team copy by name if present
+    final existing = _templates.where((t) => t.name == core.name).firstOrNull;
+    if (existing != null) {
+      if (mounted) Navigator.pop(context, existing);
+      return;
+    }
+    // Create team copy
+    try {
+      final row = await _service.createMatchFormatTemplate(
+        teamId: widget.teamId,
+        name: core.name,
+        sections: core.sections.map((s) => s.toMap()).toList(),
+      );
+      if (mounted) Navigator.pop(context, MatchFormatTemplate.fromMap(row));
+    } catch (e) {
+      if (mounted) showInfoSnackBar(context, 'Could not apply template: $e');
     }
   }
 
@@ -1826,7 +2017,7 @@ class _MatchFormatPickerSheetState extends State<_MatchFormatPickerSheet> {
                           ],
                         ),
                       )
-                    : _templates.isEmpty
+                    : (_templates.isEmpty && _coreTemplates.isEmpty)
                         ? Center(
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
@@ -1856,40 +2047,97 @@ class _MatchFormatPickerSheetState extends State<_MatchFormatPickerSheet> {
                               ],
                             ),
                           )
-                        : ListView.separated(
+                        : ListView(
                             controller: scrollCtrl,
                             padding: const EdgeInsets.symmetric(vertical: 8),
-                            itemCount: _templates.length,
-                            separatorBuilder: (context, index) =>
-                                const Divider(height: 1),
-                            itemBuilder: (_, i) {
-                              final t = _templates[i];
-                              return ListTile(
-                                leading: const Icon(
-                                    Icons.format_list_bulleted_outlined),
-                                title: Text(t.name,
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.w600)),
-                                subtitle: Text(
-                                  '${t.sections.length} section${t.sections.length == 1 ? '' : 's'}',
-                                ),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      icon: const Icon(Icons.edit_outlined),
-                                      tooltip: 'Edit',
-                                      onPressed: () => _openEdit(t),
-                                    ),
-                                    const Icon(Icons.chevron_right),
-                                  ],
-                                ),
-                                onTap: () => Navigator.pop(context, t),
-                              );
-                            },
+                            children: [
+                              if (_coreTemplates.isNotEmpty) ...[
+                                _SectionHeader(label: '★ Core Library'),
+                                ..._coreTemplates.map((t) => Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        ListTile(
+                                          leading: const Icon(
+                                              Icons.public_outlined),
+                                          title: Text(t.name,
+                                              style: const TextStyle(
+                                                  fontWeight:
+                                                      FontWeight.w600)),
+                                          subtitle: Text(
+                                            '${t.sections.length} section${t.sections.length == 1 ? '' : 's'}'
+                                            '${t.sport != null && t.sport!.isNotEmpty ? ' · ${t.sport}' : ''}',
+                                          ),
+                                          trailing: const Icon(
+                                              Icons.chevron_right),
+                                          onTap: () =>
+                                              _selectCoreTemplate(t),
+                                        ),
+                                        const Divider(height: 1),
+                                      ],
+                                    )),
+                              ],
+                              _SectionHeader(label: 'My Formats'),
+                              ..._templates.map((t) => Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      ListTile(
+                                        leading: const Icon(
+                                            Icons.format_list_bulleted_outlined),
+                                        title: Text(t.name,
+                                            style: const TextStyle(
+                                                fontWeight: FontWeight.w600)),
+                                        subtitle: Text(
+                                          '${t.sections.length} section${t.sections.length == 1 ? '' : 's'}',
+                                        ),
+                                        trailing: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            IconButton(
+                                              icon: const Icon(
+                                                  Icons.edit_outlined),
+                                              tooltip: 'Edit',
+                                              onPressed: () => _openEdit(t),
+                                            ),
+                                            const Icon(Icons.chevron_right),
+                                          ],
+                                        ),
+                                        onTap: () =>
+                                            Navigator.pop(context, t),
+                                      ),
+                                      const Divider(height: 1),
+                                    ],
+                                  )),
+                            ],
                           ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _SectionHeader — sticky label used in _MatchFormatPickerSheet
+// ─────────────────────────────────────────────────────────────────────────────
+class _SectionHeader extends StatelessWidget {
+  final String label;
+  const _SectionHeader({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      color: cs.surfaceContainerHighest,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+          color: cs.onSurface.withValues(alpha: 0.6),
+          letterSpacing: 0.5,
+        ),
       ),
     );
   }

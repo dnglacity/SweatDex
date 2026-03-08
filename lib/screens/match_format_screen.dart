@@ -36,6 +36,7 @@ class MatchFormatTemplate {
   final String id;
   final String teamId;
   final String name;
+  final String? sport;
   final List<MatchFormatSection> sections;
   final DateTime? createdAt;
 
@@ -43,6 +44,7 @@ class MatchFormatTemplate {
     required this.id,
     required this.teamId,
     required this.name,
+    this.sport,
     required this.sections,
     this.createdAt,
   });
@@ -50,8 +52,9 @@ class MatchFormatTemplate {
   factory MatchFormatTemplate.fromMap(Map<String, dynamic> m) =>
       MatchFormatTemplate(
         id: m['id'] as String,
-        teamId: m['team_id'] as String,
+        teamId: (m['team_id'] as String?) ?? '',
         name: m['name'] as String,
+        sport: m['sport'] as String?,
         sections: (m['sections'] as List<dynamic>? ?? [])
             .cast<Map<String, dynamic>>()
             .map(MatchFormatSection.fromMap)
